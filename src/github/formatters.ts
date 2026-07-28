@@ -29,6 +29,16 @@ export function formatPullRequestEvent({
   );
 }
 
+export function formatMergeConflictEvent(
+  pr: { html_url: string; number: number; title: string },
+  repository: { html_url: string; full_name: string },
+): string {
+  return (
+    `⚠️ Merge conflict on ${link(repository.html_url, repository.full_name)}\n` +
+    `${link(pr.html_url, `#${pr.number} ${pr.title}`)} can't be merged — needs to be updated with the base branch.`
+  );
+}
+
 export function formatWorkflowRunEvent({
   payload,
 }: EmitterWebhookEvent<"workflow_run">): string | null {
