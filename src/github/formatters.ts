@@ -1,11 +1,5 @@
 import type { EmitterWebhookEvent } from "@octokit/webhooks";
-
-function escapeHtml(text: string): string {
-  return text
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;");
-}
+import { escapeHtml } from "../utils/html.js";
 
 function link(url: string, label: string): string {
   return `<a href="${url}">${escapeHtml(label)}</a>`;

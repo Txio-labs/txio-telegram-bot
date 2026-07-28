@@ -1,23 +1,46 @@
 # txio-telegram-bot
 
-Ops bot for the Txio team. Listens for GitHub webhook events (issues, pull
-requests, CI runs, deployments) and posts a formatted notification into a
-Telegram channel. It does not accept commands or answer queries — it's a
-one-way notifier.
+Ops bot for the Txio team.
+
+- Listens for GitHub webhook events (issues, pull requests, CI runs,
+  deployments) and posts a formatted notification into the Telegram group.
+  Each event type can optionally be routed to its own forum topic, and pull
+  requests can be routed to a private DM instead of the group.
+- Welcomes new members when they join the group.
 
 ## Setup
 
 1. **Create the bot**: message [@BotFather](https://t.me/BotFather) on
    Telegram, run `/newbot`, and copy the token into `TELEGRAM_BOT_TOKEN`.
-2. **Get the channel id**: add the bot as an admin of the target channel,
-   post any message, then check
-   `https://api.telegram.org/bot<TOKEN>/getUpdates` for the chat id
-   (channel ids look like `-100xxxxxxxxxx`). Set `TELEGRAM_CHAT_ID`.
-3. **Configure the GitHub webhook**: in the repo's Settings > Webhooks, add
-   a webhook pointing at `https://<host>/webhooks/github`, content type
-   `application/json`, and a secret matching `GITHUB_WEBHOOK_SECRET`.
-   Subscribe to: Issues, Pull requests, Workflow runs, Deployment statuses.
-4. Copy `.env.example` to `.env` and fill in the values above.
+2. **Add the bot to the group** as a regular member (no admin needed).
+3. **Get the group's chat id**: send any message in the group, then check
+   `https://api.telegram.org/bot<TOKEN>/getUpdates` for `"chat":{"id": ...}`
+   (group ids are negative, supergroup/forum ids look like
+   `-100xxxxxxxxxx`). Set `TELEGRAM_CHAT_ID`.
+4. **Deploy it** somewhere with a public URL (see Docker/Render below) and
+   set `PUBLIC_URL` to that URL — it's used to register the Telegram
+   webhook that powers the new-member welcome message.
+5. **Configure the GitHub webhook**: in the repo's (or org's) Settings >
+   Webhooks, add a webhook pointing at `<PUBLIC_URL>/webhooks/github`,
+   content type `application/json` (GitHub defaults to
+   `application/x-www-form-urlencoded` — you must change this), and a
+   secret matching `GITHUB_WEBHOOK_SECRET`. Subscribe to: Issues, Pull
+   requests, Workflow runs, Deployment statuses.
+6. Copy `.env.example` to `.env` and fill in the values above.
+
+### Optional: per-topic and DM routing
+
+The group needs Topics enabled (Group settings > Topics) for thread
+routing to work.
+
+- **Topic ids**: open the topic, send a message, then check
+  `getUpdates` for `"message_thread_id"` in that update. Set
+  `TOPIC_THREAD_ISSUES` / `TOPIC_THREAD_CI` / `TOPIC_THREAD_DEPLOYS`.
+  Unset ones fall back to the group's General topic.
+- **PR private DM**: DM the bot directly, send it any message, then check
+  `getUpdates` for that message's `"chat":{"id": ...}` (your personal chat
+  id, a positive number). Set `PULL_REQUEST_CHAT_ID` — pull request
+  notifications go there instead of the group.
 
 ## Run
 
@@ -33,3 +56,10 @@ npm run build && npm start   # production
 docker build -t txio-telegram-bot .
 docker run --env-file .env -p 3000:3000 txio-telegram-bot
 ```
+
+## Render
+
+`render.yaml` is included — Render dashboard > New > Blueprint, connect
+this repo, and set the secret env vars (`TELEGRAM_BOT_TOKEN`,
+`TELEGRAM_CHAT_ID`, `GITHUB_WEBHOOK_SECRET`, `PUBLIC_URL`, and any of the
+optional routing vars) in the dashboard.
