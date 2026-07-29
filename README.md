@@ -1,5 +1,7 @@
 # txio-telegram-bot
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT) [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](http://makeapullrequest.com)
+
 Ops bot for the Txio team.
 
 - Listens for GitHub webhook events (issues, pull requests, CI runs,
@@ -63,3 +65,13 @@ docker run --env-file .env -p 3000:3000 txio-telegram-bot
 this repo, and set the secret env vars (`TELEGRAM_BOT_TOKEN`,
 `TELEGRAM_CHAT_ID`, `GITHUB_WEBHOOK_SECRET`, `PUBLIC_URL`, and any of the
 optional routing vars) in the dashboard.
+
+## Contributing
+
+See [CONTRIBUTING.md](./CONTRIBUTING.md) for bug reports, enhancement
+suggestions, and the PR process. Please also read our
+[Code of Conduct](./CODE_OF_CONDUCT.md).
+
+## License
+
+MIT — see [LICENSE](./LICENSE).
