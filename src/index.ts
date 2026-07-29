@@ -12,6 +12,7 @@ app.get("/healthz", (_req, res) => {
 });
 
 app.use(createNodeMiddleware(webhooks, { path: config.githubWebhookPath }));
+app.use(config.telegramWebhookPath, express.json());
 app.use(config.telegramWebhookPath, webhookCallback(bot, "express"));
 
 app.listen(config.port, async () => {
