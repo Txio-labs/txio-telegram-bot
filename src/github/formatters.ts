@@ -1,8 +1,8 @@
 import type { EmitterWebhookEvent } from "@octokit/webhooks";
 import { escapeHtml } from "../utils/html.js";
 
-function link(url: string, label: string): string {
-  return `<a href="${url}">${escapeHtml(label)}</a>`;
+export function link(url: string, label: string): string {
+  return `<a href="${escapeHtml(url)}">${escapeHtml(label)}</a>`;
 }
 
 export function formatIssueEvent({ payload }: EmitterWebhookEvent<"issues">): string {

@@ -9,7 +9,8 @@
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "build": "tsc -p tsconfig.json",
-    "start": "node dist/index.js"
+    "start": "node dist/index.js",
+    "test": "TELEGRAM_BOT_TOKEN=test TELEGRAM_CHAT_ID=test TELEGRAM_WEBHOOK_SECRET=test GITHUB_WEBHOOK_SECRET=test PUBLIC_URL=http://localhost:3000 tsx --test test-security.ts"
   },
   "dependencies": {
     "@octokit/webhooks": "^13.6.4",
