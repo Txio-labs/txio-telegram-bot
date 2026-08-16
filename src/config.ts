@@ -13,6 +13,10 @@ function optionalInt(name: string): number | undefined {
   return value ? Number(value) : undefined;
 }
 
+function optionalString(name: string): string | undefined {
+  return process.env[name];
+}
+
 export const config = {
   port: Number(process.env.PORT ?? 3000),
   telegramBotToken: required("TELEGRAM_BOT_TOKEN"),
@@ -31,4 +35,14 @@ export const config = {
   // If set, pull request notifications go to this chat (e.g. your personal DM)
   // instead of the group.
   pullRequestChatId: process.env.PULL_REQUEST_CHAT_ID || undefined,
+  // Optional: GitHub token for merge-conflict detection on private repos.
+  // A fine-grained PAT or GitHub App installation token with pull_requests: read scope.
+  githubToken: optionalString("GITHUB_TOKEN"),
 };
+
+// Log a warning if githubToken is not set, since merge-conflict detection will be degraded.
+if (!config.githubToken) {
+  console.warn(
+    "WARNING: GITHUB_TOKEN is not set. Merge-conflict detection will not work for private repos and may fail due to rate limits on public repos."
+  );
+}
