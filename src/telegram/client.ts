@@ -27,16 +27,23 @@ bot.on("message:new_chat_members", async (ctx) => {
 
 export async function sendMessage(
   chatId: string | number,
-  html: string,
+  text: string,
   threadId?: number,
+  options?: { parseMode?: "HTML"; replyMarkup?: any }
 ): Promise<void> {
-  await bot.api.sendMessage(chatId, html, {
-    parse_mode: "HTML",
+  const parse_mode = options && "parseMode" in options ? options.parseMode : "HTML";
+  await bot.api.sendMessage(chatId, text, {
+    ...(parse_mode ? { parse_mode } : {}),
     link_preview_options: { is_disabled: true },
     message_thread_id: threadId,
+    reply_markup: options?.replyMarkup,
   });
 }
 
-export async function notifyChannel(html: string, threadId?: number): Promise<void> {
-  return sendMessage(config.telegramChatId, html, threadId);
+export async function notifyChannel(
+  text: string,
+  threadId?: number,
+  options?: { parseMode?: "HTML"; replyMarkup?: any }
+): Promise<void> {
+  return sendMessage(config.telegramChatId, text, threadId, options);
 }

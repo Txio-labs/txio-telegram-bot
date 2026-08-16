@@ -6,6 +6,7 @@ import {
   formatIssueEvent,
   formatMergeConflictEvent,
   formatPullRequestEvent,
+  formatPullRequestOpenedEvent,
   formatWorkflowRunEvent,
 } from "./formatters.js";
 
@@ -33,7 +34,7 @@ webhooks.on(["issues.opened", "issues.closed", "issues.reopened"], async (event)
   await notifyChannel(formatIssueEvent(event), config.topicThreads.issues);
 });
 
-webhooks.on(["pull_request.opened", "pull_request.closed", "pull_request.reopened"], async (event) => {
+webhooks.on(["pull_request.closed", "pull_request.reopened"], async (event) => {
   if (isDuplicateDelivery(event.id)) return;
   const message = formatPullRequestEvent(event);
   if (config.pullRequestChatId) {
@@ -41,6 +42,25 @@ webhooks.on(["pull_request.opened", "pull_request.closed", "pull_request.reopene
   } else {
     await notifyChannel(message);
   }
+});
+
+webhooks.on("pull_request.opened", async (event) => {
+  if (isDuplicateDelivery(event.id)) return;
+  const { channel, format } = config.prOpened;
+  const { text, parseMode, replyMarkup } = formatPullRequestOpenedEvent(event, format);
+
+  let targetChatId: string | number = config.telegramChatId;
+  let threadId: number | undefined;
+
+  if (channel === "topic_thread") {
+    threadId = config.topicThreads.pullRequests;
+  } else if (channel === "dm") {
+    if (config.pullRequestChatId) {
+      targetChatId = config.pullRequestChatId;
+    }
+  }
+
+  await sendMessage(targetChatId, text, threadId, { parseMode, replyMarkup });
 });
 
 // GitHub computes `mergeable` asynchronously, so it's often null on the

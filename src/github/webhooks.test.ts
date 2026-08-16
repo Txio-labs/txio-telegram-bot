@@ -9,7 +9,14 @@ global.fetch = mockFetch;
 // Mock the config module
 vi.mock("../config.js", () => ({
   config: {
+    telegramBotToken: "fake:token",
+    telegramChatId: "-1000000",
     githubToken: undefined,
+    githubWebhookSecret: "fake:secret",
+    prOpened: {
+      channel: "main_chat",
+      format: "markdown_summary"
+    },
   },
 }));
 

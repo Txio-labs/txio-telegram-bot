@@ -30,8 +30,13 @@ export const config = {
   // Forum topic (message_thread_id) each event type posts into. Unset = group's General topic.
   topicThreads: {
     issues: optionalInt("TOPIC_THREAD_ISSUES"),
+    pullRequests: optionalInt("TOPIC_THREAD_PULL_REQUESTS"),
     ci: optionalInt("TOPIC_THREAD_CI"),
     deploys: optionalInt("TOPIC_THREAD_DEPLOYS"),
+  },
+  prOpened: {
+    channel: process.env.PR_OPENED_CHANNEL ?? "main_chat",
+    format: process.env.PR_OPENED_FORMAT ?? "markdown_summary",
   },
   // If set, pull request notifications go to this chat (e.g. your personal DM)
   // instead of the group.
