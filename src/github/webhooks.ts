@@ -46,15 +46,19 @@ webhooks.on(["pull_request.opened", "pull_request.closed", "pull_request.reopene
 // GitHub computes `mergeable` asynchronously, so it's often null on the
 // webhook payload itself. Give it a few seconds, then check via the REST
 // API before deciding whether to alert.
-async function isMergeConflicted(
+export async function isMergeConflicted(
   pr: { number: number; mergeable?: boolean | null },
   repository: { full_name: string },
 ): Promise<boolean> {
   if (pr.mergeable !== null && pr.mergeable !== undefined) return pr.mergeable === false;
 
   await new Promise((resolve) => setTimeout(resolve, 4000));
+  const headers: Record<string, string> = { Accept: "application/vnd.github+json" };
+  if (config.githubToken) {
+    headers.Authorization = `Bearer ${config.githubToken}`;
+  }
   const res = await fetch(`https://api.github.com/repos/${repository.full_name}/pulls/${pr.number}`, {
-    headers: { Accept: "application/vnd.github+json" },
+    headers,
   });
   if (!res.ok) return false;
   const data = (await res.json()) as { mergeable: boolean | null };
