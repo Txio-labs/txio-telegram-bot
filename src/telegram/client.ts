@@ -4,10 +4,19 @@ import { escapeHtml } from "../utils/html.js";
 
 export const bot = new Bot(config.telegramBotToken);
 
+// Catch-all error handler to prevent unhandled promise rejections from crashing the process
+bot.catch((err) => {
+  console.error("Telegram bot error caught by bot.catch():", err);
+});
+
 bot.on("message:new_chat_members", async (ctx) => {
+  if (!Array.isArray(ctx.message?.new_chat_members)) return;
   for (const member of ctx.message.new_chat_members) {
-    if (member.id === ctx.me.id) continue; // the bot itself being added to the group
-    const name = escapeHtml(member.username ? `@${member.username}` : member.first_name);
+    if (!member || typeof member !== "object" || typeof member.id !== "number") {
+      continue;
+    }
+    if (member.id === ctx.me?.id) continue; // the bot itself being added to the group
+    const name = escapeHtml(member.username ? `@${member.username}` : member.first_name || "member");
     await ctx.reply(
       `👋 Welcome to Txio, ${name}! Feel free to introduce yourself. ` +
         `Issue, PR, CI, and deploy updates for the project get posted here automatically.`,

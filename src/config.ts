@@ -21,6 +21,7 @@ export const config = {
   port: Number(process.env.PORT ?? 3000),
   telegramBotToken: required("TELEGRAM_BOT_TOKEN"),
   telegramChatId: required("TELEGRAM_CHAT_ID"),
+  telegramWebhookSecret: required("TELEGRAM_WEBHOOK_SECRET"),
   githubWebhookSecret: required("GITHUB_WEBHOOK_SECRET"),
   githubWebhookPath: process.env.GITHUB_WEBHOOK_PATH ?? "/webhooks/github",
   // Public base URL this service is reachable at, used to register the Telegram webhook.
