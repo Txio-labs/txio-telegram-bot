@@ -28,7 +28,13 @@ Ops bot for the Txio team.
    `application/x-www-form-urlencoded` — you must change this), and a
    secret matching `GITHUB_WEBHOOK_SECRET`. Subscribe to: Issues, Pull
    requests, Workflow runs, Deployment statuses.
-6. Copy `.env.example` to `.env` and fill in the values above.
+6. **(Optional) Set GITHUB_TOKEN**: for merge-conflict detection on private
+   repos and to avoid rate limits on public repos, create a fine-grained
+   personal access token (PAT) or GitHub App installation token with
+   `pull_requests: read` scope and set it as `GITHUB_TOKEN`. Without this,
+   merge-conflict alerts will not work for private repos and may fail on
+   public repos due to the 60 requests/hour unauthenticated rate limit.
+7. Copy `.env.example` to `.env` and fill in the values above.
 
 ### Optional: per-topic and DM routing
 
