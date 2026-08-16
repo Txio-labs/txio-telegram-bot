@@ -1,4 +1,5 @@
 import type { EmitterWebhookEvent } from "@octokit/webhooks";
+import { InlineKeyboard } from "grammy";
 import { escapeHtml } from "../utils/html.js";
 
 export function link(url: string, label: string): string {
@@ -27,6 +28,31 @@ export function formatPullRequestEvent({
     `${link(pr.html_url, `#${pr.number} ${pr.title}`)}\n` +
     `by ${escapeHtml(pr.user?.login ?? "unknown")}`
   );
+}
+
+export function formatPullRequestOpenedEvent(
+  event: EmitterWebhookEvent<"pull_request">,
+  format: string
+): { text: string; parseMode?: "HTML"; replyMarkup?: any } {
+  const { pull_request: pr, repository } = event.payload;
+
+  if (format === "plain_text") {
+    const text = `🆕 Pull request opened in ${repository.full_name}\n#${pr.number} ${pr.title}\nby ${pr.user?.login ?? "unknown"}`;
+    return { text, parseMode: undefined };
+  }
+
+  const htmlText =
+    `🆕 Pull request opened in ${link(repository.html_url, repository.full_name)}\n` +
+    `${link(pr.html_url, `#${pr.number} ${pr.title}`)}\n` +
+    `by ${escapeHtml(pr.user?.login ?? "unknown")}`;
+
+  if (format === "inline_buttons") {
+    const keyboard = new InlineKeyboard().url("View Pull Request", pr.html_url);
+    return { text: htmlText, parseMode: "HTML", replyMarkup: keyboard };
+  }
+
+  // format === "markdown_summary" or default
+  return { text: htmlText, parseMode: "HTML" };
 }
 
 export function formatMergeConflictEvent(
