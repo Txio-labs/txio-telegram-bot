@@ -15,7 +15,7 @@ app.use(createNodeMiddleware(webhooks, { path: config.githubWebhookPath }));
 app.use(config.telegramWebhookPath, express.json());
 app.use(config.telegramWebhookPath, webhookCallback(bot, "express"));
 
-app.listen(config.port, async () => {
+const server = app.listen(config.port, async () => {
   console.log(`txio-telegram-bot listening on :${config.port}`);
   const webhookUrl = `${config.publicUrl}${config.telegramWebhookPath}`;
   try {
@@ -25,3 +25,32 @@ app.listen(config.port, async () => {
     console.error("Failed to register Telegram webhook:", error);
   }
 });
+
+const shutdownTimeoutMs = 10_000;
+let shuttingDown = false;
+
+function shutdown(signal: NodeJS.Signals): void {
+  if (shuttingDown) return;
+  shuttingDown = true;
+
+  console.log(`${signal} received, starting graceful shutdown`);
+
+  const forceExitTimer = setTimeout(() => {
+    console.error(`Graceful shutdown timed out after ${shutdownTimeoutMs}ms, forcing exit`);
+    process.exit(1);
+  }, shutdownTimeoutMs);
+
+  server.close((error) => {
+    clearTimeout(forceExitTimer);
+    if (error) {
+      console.error("Graceful shutdown failed:", error);
+      process.exit(1);
+    }
+
+    console.log("Graceful shutdown complete");
+    process.exit(0);
+  });
+}
+
+process.on("SIGTERM", shutdown);
+process.on("SIGINT", shutdown);
