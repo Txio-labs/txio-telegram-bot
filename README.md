@@ -49,6 +49,7 @@ routing to work.
 ```
 npm install
 npm run dev     # local development, ts via tsx
+npm test        # run the unit test suite
 npm run build && npm start   # production
 ```
 
