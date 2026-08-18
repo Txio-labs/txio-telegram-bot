@@ -1,4 +1,5 @@
 import "dotenv/config";
+import type { DeliveryChannel, DeliveryFormat, EventDeliveryConfig } from "./notifications/types.js";
 
 function required(name: string): string {
   const value = process.env[name];
@@ -35,9 +36,13 @@ export const config = {
     deploys: optionalInt("TOPIC_THREAD_DEPLOYS"),
   },
   prOpened: {
-    channel: process.env.PR_OPENED_CHANNEL ?? "main_chat",
-    format: process.env.PR_OPENED_FORMAT ?? "markdown_summary",
-  },
+    channel: (process.env.PR_OPENED_CHANNEL as DeliveryChannel) ?? "main_chat",
+    format: (process.env.PR_OPENED_FORMAT as DeliveryFormat) ?? "markdown_summary",
+  } as EventDeliveryConfig,
+  prChangesRequested: {
+    channel: (process.env.PR_CHANGES_REQUESTED_CHANNEL as DeliveryChannel) ?? "main_chat",
+    format: (process.env.PR_CHANGES_REQUESTED_FORMAT as DeliveryFormat) ?? "markdown_summary",
+  } as EventDeliveryConfig,
   // If set, pull request notifications go to this chat (e.g. your personal DM)
   // instead of the group.
   pullRequestChatId: process.env.PULL_REQUEST_CHAT_ID || undefined,

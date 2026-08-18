@@ -1,5 +1,6 @@
 import { Webhooks } from "@octokit/webhooks";
 import { config } from "../config.js";
+import { prChangesRequestedNotifier } from "../notifications/prChangesRequested.js";
 import { notifyChannel, sendMessage } from "../telegram/client.js";
 import {
   formatDeploymentStatusEvent,
@@ -92,6 +93,16 @@ webhooks.on(["pull_request.opened", "pull_request.synchronize", "pull_request.re
   const message = formatMergeConflictEvent(pr, repository);
   const target = config.pullRequestChatId ?? config.telegramChatId;
   await sendMessage(target, message);
+});
+
+webhooks.on("pull_request_review.submitted", async (event) => {
+  if (isDuplicateDelivery(event.id)) return;
+  if (event.payload.review.state !== "changes_requested") return;
+  
+  await prChangesRequestedNotifier.dispatch(event.payload, {
+    threadId: config.topicThreads.pullRequests,
+    dmChatId: config.pullRequestChatId
+  });
 });
 
 webhooks.on("workflow_run.completed", async (event) => {
