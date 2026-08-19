@@ -1,6 +1,6 @@
 import { Webhooks } from "@octokit/webhooks";
-import { config } from "../config.js";
-import { notifyChannel, sendMessage } from "../telegram/client.js";
+import { config, resolveDestination } from "../config.js";
+import { sendMessage } from "../telegram/client.js";
 import {
   formatDeploymentStatusEvent,
   formatIssueEvent,
@@ -31,7 +31,13 @@ export function isDuplicateDelivery(id: string | undefined): boolean {
 
 webhooks.on(["issues.opened", "issues.closed", "issues.reopened"], async (event) => {
   if (isDuplicateDelivery(event.id)) return;
-  await notifyChannel(formatIssueEvent(event), config.topicThreads.issues);
+  const { chatId, threadId } = resolveDestination(
+    event.payload.repository?.full_name,
+    "issues",
+    config.telegramChatId,
+    config.topicThreads.issues,
+  );
+  await sendMessage(chatId, formatIssueEvent(event), threadId);
 });
 
 webhooks.on(["pull_request.closed", "pull_request.reopened"], async (event) => {
@@ -39,11 +45,14 @@ webhooks.on(["pull_request.closed", "pull_request.reopened"], async (event) => {
   const { channel, format } = config.prClosed;
   const { text, parseMode, replyMarkup } = formatPullRequestClosedEvent(event, format);
 
+  const repoFullName = event.payload.repository?.full_name;
   let targetChatId: string | number = config.telegramChatId;
   let threadId: number | undefined;
 
   if (channel === "topic_thread") {
-    threadId = config.topicThreads.pullRequests;
+    const dest = resolveDestination(repoFullName, "pullRequests", config.telegramChatId, config.topicThreads.pullRequests);
+    targetChatId = dest.chatId;
+    threadId = dest.threadId;
   } else if (channel === "dm") {
     if (config.pullRequestChatId) {
       targetChatId = config.pullRequestChatId;
@@ -58,11 +67,14 @@ webhooks.on("pull_request.opened", async (event) => {
   const { channel, format } = config.prOpened;
   const { text, parseMode, replyMarkup } = formatPullRequestOpenedEvent(event, format);
 
+  const repoFullName = event.payload.repository?.full_name;
   let targetChatId: string | number = config.telegramChatId;
   let threadId: number | undefined;
 
   if (channel === "topic_thread") {
-    threadId = config.topicThreads.pullRequests;
+    const dest = resolveDestination(repoFullName, "pullRequests", config.telegramChatId, config.topicThreads.pullRequests);
+    targetChatId = dest.chatId;
+    threadId = dest.threadId;
   } else if (channel === "dm") {
     if (config.pullRequestChatId) {
       targetChatId = config.pullRequestChatId;
@@ -99,19 +111,38 @@ webhooks.on(["pull_request.opened", "pull_request.synchronize", "pull_request.re
   const { pull_request: pr, repository } = event.payload;
   if (!(await isMergeConflicted(pr, repository))) return;
   const message = formatMergeConflictEvent(pr, repository);
-  const target = config.pullRequestChatId ?? config.telegramChatId;
-  await sendMessage(target, message);
+  const { chatId } = resolveDestination(
+    repository?.full_name,
+    "pullRequests",
+    config.pullRequestChatId ?? config.telegramChatId,
+    undefined,
+  );
+  await sendMessage(chatId, message);
 });
 
 webhooks.on("workflow_run.completed", async (event) => {
   if (isDuplicateDelivery(event.id)) return;
   const message = formatWorkflowRunEvent(event);
-  if (message) await notifyChannel(message, config.topicThreads.ci);
+  if (message) {
+    const { chatId, threadId } = resolveDestination(
+      event.payload.repository?.full_name,
+      "ci",
+      config.telegramChatId,
+      config.topicThreads.ci,
+    );
+    await sendMessage(chatId, message, threadId);
+  }
 });
 
 webhooks.on("deployment_status.created", async (event) => {
   if (isDuplicateDelivery(event.id)) return;
-  await notifyChannel(formatDeploymentStatusEvent(event), config.topicThreads.deploys);
+  const { chatId, threadId } = resolveDestination(
+    event.payload.repository?.full_name,
+    "deploys",
+    config.telegramChatId,
+    config.topicThreads.deploys,
+  );
+  await sendMessage(chatId, formatDeploymentStatusEvent(event), threadId);
 });
 
 webhooks.onError((error) => {

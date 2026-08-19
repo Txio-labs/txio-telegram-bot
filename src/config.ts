@@ -1,4 +1,5 @@
 import "dotenv/config";
+import { readFileSync } from "node:fs";
 
 function required(name: string): string {
   const value = process.env[name];
@@ -15,6 +16,98 @@ function optionalInt(name: string): number | undefined {
 
 function optionalString(name: string): string | undefined {
   return process.env[name];
+}
+
+// ── Repo routing ──────────────────────────────────────────────────────
+
+export type EventCategory = "issues" | "pullRequests" | "ci" | "deploys";
+
+export type RepoRoute = {
+  chatId?: string | number;
+  issues?: number;
+  pullRequests?: number;
+  ci?: number;
+  deploys?: number;
+};
+
+export type RepoRoutingConfig = Record<string, RepoRoute>;
+
+export type Destination = {
+  chatId: string | number;
+  threadId: number | undefined;
+};
+
+function loadRepoRoutingConfig(): RepoRoutingConfig {
+  const configPath = process.env.REPO_ROUTING_CONFIG_PATH;
+  if (!configPath) return {};
+
+  let raw: string;
+  try {
+    raw = readFileSync(configPath, "utf-8");
+  } catch (err) {
+    throw new Error(
+      `Failed to read REPO_ROUTING_CONFIG_PATH "${configPath}": ${(err as Error).message}`,
+    );
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (err) {
+    throw new Error(
+      `REPO_ROUTING_CONFIG_PATH "${configPath}" contains invalid JSON: ${(err as Error).message}`,
+    );
+  }
+
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+    throw new Error(
+      `REPO_ROUTING_CONFIG_PATH "${configPath}" must be a JSON object mapping repo full names to route configs`,
+    );
+  }
+
+  for (const [repo, route] of Object.entries(parsed as Record<string, unknown>)) {
+    if (typeof route !== "object" || route === null || Array.isArray(route)) {
+      throw new Error(
+        `REPO_ROUTING_CONFIG_PATH "${configPath}": entry for "${repo}" must be an object`,
+      );
+    }
+    for (const key of Object.keys(route as Record<string, unknown>)) {
+      const allowed = ["chatId", "issues", "pullRequests", "ci", "deploys"];
+      if (!allowed.includes(key)) {
+        throw new Error(
+          `REPO_ROUTING_CONFIG_PATH "${configPath}": unknown key "${key}" in entry for "${repo}"`,
+        );
+      }
+    }
+  }
+
+  return parsed as RepoRoutingConfig;
+}
+
+const repoRouting = loadRepoRoutingConfig();
+
+export function resolveDestination(
+  repoFullName: string | undefined,
+  eventCategory: EventCategory,
+  fallbackChatId: string | number,
+  fallbackThreadId: number | undefined,
+  routing: RepoRoutingConfig = repoRouting,
+): Destination {
+  if (!repoFullName) {
+    return { chatId: fallbackChatId, threadId: fallbackThreadId };
+  }
+
+  const key = repoFullName.toLowerCase();
+  const route = routing[key];
+
+  if (!route) {
+    return { chatId: fallbackChatId, threadId: fallbackThreadId };
+  }
+
+  const chatId = route.chatId ?? fallbackChatId;
+  const threadId = eventCategory in route ? (route as Record<string, number | undefined>)[eventCategory] : fallbackThreadId;
+
+  return { chatId, threadId };
 }
 
 export const config = {

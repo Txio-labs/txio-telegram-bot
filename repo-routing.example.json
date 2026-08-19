@@ -1,0 +1,25 @@
+{
+  "txio-labs/txio-backend": {
+    "chatId": "-1001234567890",
+    "issues": 101,
+    "pullRequests": 102,
+    "ci": 103,
+    "deploys": 104
+  },
+  "txio-labs/txio-cli": {
+    "chatId": "-1001234567890",
+    "deploys": 105
+  },
+  "txio-labs/txio-desktop": {
+    "chatId": "-1009876543210",
+    "ci": 201,
+    "deploys": 202
+  },
+  "txio-labs/txio-telegram-bot": {
+    "chatId": "-1001234567890",
+    "issues": 106,
+    "pullRequests": 107,
+    "ci": 108,
+    "deploys": 109
+  }
+}
