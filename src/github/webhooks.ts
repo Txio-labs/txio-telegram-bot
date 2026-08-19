@@ -4,6 +4,7 @@ import { sendMessage } from "../telegram/client.js";
 import {
   formatBranchCreatedEvent,
   formatBranchDeletedEvent,
+  formatCommentEvent,
   formatDeploymentStatusEvent,
   formatForcePushEvent,
   formatIssueEvent,
@@ -121,6 +122,21 @@ webhooks.on(["pull_request.opened", "pull_request.synchronize", "pull_request.re
     undefined,
   );
   await sendMessage(chatId, message);
+});
+
+webhooks.on("issue_comment.created", async (event) => {
+  if (isDuplicateDelivery(event.id)) return;
+  const { issue, comment, repository } = event.payload;
+  // Skip automation (e.g. other bots commenting) to avoid notification loops.
+  if (comment.user?.type === "Bot") return;
+  const isPr = Boolean(issue.pull_request);
+  const { chatId, threadId } = resolveDestination(
+    repository?.full_name,
+    isPr ? "pullRequests" : "issues",
+    config.telegramChatId,
+    isPr ? config.topicThreads.pullRequests : config.topicThreads.issues,
+  );
+  await sendMessage(chatId, formatCommentEvent(event), threadId);
 });
 
 webhooks.on("workflow_run.completed", async (event) => {

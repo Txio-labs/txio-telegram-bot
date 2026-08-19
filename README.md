@@ -27,8 +27,8 @@ Ops bot for the Txio team.
    Webhooks, add a webhook pointing at `<PUBLIC_URL>/webhooks/github`,
    content type `application/json` (GitHub defaults to
    `application/x-www-form-urlencoded` — you must change this), and a
-   secret matching `GITHUB_WEBHOOK_SECRET`. Subscribe to: Issues, Pull
-   requests, Workflow runs, Deployment statuses, Branches.
+   secret matching `GITHUB_WEBHOOK_SECRET`. Subscribe to: Issues, Issue
+   comments, Pull requests, Workflow runs, Deployment statuses, Branches.
 6. **(Optional) Set GITHUB_TOKEN**: for merge-conflict detection on private
    repos and to avoid rate limits on public repos, create a fine-grained
    personal access token (PAT) or GitHub App installation token with
