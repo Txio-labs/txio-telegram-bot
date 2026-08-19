@@ -38,6 +38,10 @@ export const config = {
     channel: process.env.PR_OPENED_CHANNEL ?? "main_chat",
     format: process.env.PR_OPENED_FORMAT ?? "markdown_summary",
   },
+  prClosed: {
+    channel: process.env.PR_CLOSED_CHANNEL ?? "main_chat",
+    format: process.env.PR_CLOSED_FORMAT ?? "markdown_summary",
+  },
   // If set, pull request notifications go to this chat (e.g. your personal DM)
   // instead of the group.
   pullRequestChatId: process.env.PULL_REQUEST_CHAT_ID || undefined,

@@ -5,7 +5,7 @@ import {
   formatDeploymentStatusEvent,
   formatIssueEvent,
   formatMergeConflictEvent,
-  formatPullRequestEvent,
+  formatPullRequestClosedEvent,
   formatPullRequestOpenedEvent,
   formatWorkflowRunEvent,
 } from "./formatters.js";
@@ -36,12 +36,21 @@ webhooks.on(["issues.opened", "issues.closed", "issues.reopened"], async (event)
 
 webhooks.on(["pull_request.closed", "pull_request.reopened"], async (event) => {
   if (isDuplicateDelivery(event.id)) return;
-  const message = formatPullRequestEvent(event);
-  if (config.pullRequestChatId) {
-    await sendMessage(config.pullRequestChatId, message);
-  } else {
-    await notifyChannel(message);
+  const { channel, format } = config.prClosed;
+  const { text, parseMode, replyMarkup } = formatPullRequestClosedEvent(event, format);
+
+  let targetChatId: string | number = config.telegramChatId;
+  let threadId: number | undefined;
+
+  if (channel === "topic_thread") {
+    threadId = config.topicThreads.pullRequests;
+  } else if (channel === "dm") {
+    if (config.pullRequestChatId) {
+      targetChatId = config.pullRequestChatId;
+    }
   }
+
+  await sendMessage(targetChatId, text, threadId, { parseMode, replyMarkup });
 });
 
 webhooks.on("pull_request.opened", async (event) => {
