@@ -50,6 +50,39 @@ routing to work.
   id, a positive number). Set `PULL_REQUEST_CHAT_ID` — pull request
   notifications go there instead of the group.
 
+### Optional: multi-repo routing
+
+When the bot serves multiple repositories, you can route each repo's
+notifications to a distinct chat or forum topic. Create a JSON file
+(modelled on `repo-routing.example.json`) and set
+`REPO_ROUTING_CONFIG_PATH` to its path:
+
+```json
+{
+  "txio-labs/txio-backend": {
+    "chatId": "-1001234567890",
+    "issues": 101,
+    "pullRequests": 102,
+    "ci": 103,
+    "deploys": 104
+  },
+  "txio-labs/txio-cli": {
+    "chatId": "-1001234567890",
+    "deploys": 105
+  }
+}
+```
+
+Each key is a `repository.full_name` (case-insensitive). The value is an
+object with:
+
+- `chatId` (optional) — overrides `TELEGRAM_CHAT_ID` for that repo.
+- `issues` / `pullRequests` / `ci` / `deploys` (optional) — overrides
+  the corresponding `TOPIC_THREAD_*` for that event type in that chat.
+
+Repos not present in the file, or event types left blank, fall back to the
+defaults (`TELEGRAM_CHAT_ID` and `TOPIC_THREAD_*` env vars).
+
 ## Run
 
 ```
