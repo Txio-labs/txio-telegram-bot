@@ -11,6 +11,19 @@ Ops bot for the Txio team.
   requests can be routed to a private DM instead of the group.
 - Welcomes new members when they join the group.
 
+## Notifications
+
+### CI runs
+
+Workflow runs are only reported once they reach a **completed** state
+(`success`, `failure`, `cancelled`, ...). The intermediate
+`requested` / `in_progress` transitions are intentionally **not**
+notified: they are emitted for every queued/in-flight build and would
+roughly double the message volume for little extra signal, while the
+completion event still surfaces every outcome, including cancelled runs.
+Only `workflow_run.completed` is subscribed to in
+`src/github/webhooks.ts`.
+
 ## Setup
 
 1. **Create the bot**: message [@BotFather](https://t.me/BotFather) on
