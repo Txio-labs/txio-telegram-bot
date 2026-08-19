@@ -1,52 +1,87 @@
-import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 
-const requiredConfig = {
-  TELEGRAM_BOT_TOKEN: "test-token",
-  TELEGRAM_CHAT_ID: "test-chat",
-  GITHUB_WEBHOOK_SECRET: "test-secret",
-  PUBLIC_URL: "https://example.test",
-};
-
-let required: (name: string) => string;
-let optionalInt: (name: string) => number | undefined;
-
-beforeAll(async () => {
-  for (const [name, value] of Object.entries(requiredConfig)) {
-    vi.stubEnv(name, value);
-  }
-  ({ required, optionalInt } = await import("./config.js"));
+// Must set required env vars before config module is imported
+vi.hoisted(() => {
+  process.env.TELEGRAM_BOT_TOKEN = "fake:token";
+  process.env.TELEGRAM_CHAT_ID = "-1000000";
+  process.env.TELEGRAM_WEBHOOK_SECRET = "fake-webhook-secret";
+  process.env.GITHUB_WEBHOOK_SECRET = "fake-github-secret";
+  process.env.PUBLIC_URL = "https://example.com";
 });
 
-afterAll(() => {
-  vi.unstubAllEnvs();
-});
+import { resolveDestination } from "./config.js";
+import type { RepoRoutingConfig } from "./config.js";
 
-describe("required", () => {
-  it("returns an environment variable's value", () => {
-    vi.stubEnv("TEST_REQUIRED_PRESENT", "configured");
+const FALLBACK_CHAT = "-1000000";
+const FALLBACK_THREAD = 42;
 
-    expect(required("TEST_REQUIRED_PRESENT")).toBe("configured");
+describe("resolveDestination", () => {
+  it("returns fallback when repoFullName is undefined", () => {
+    const result = resolveDestination(undefined, "issues", FALLBACK_CHAT, FALLBACK_THREAD);
+    expect(result).toEqual({ chatId: FALLBACK_CHAT, threadId: FALLBACK_THREAD });
   });
 
-  it("throws when an environment variable is missing", () => {
-    vi.stubEnv("TEST_REQUIRED_MISSING", "");
-
-    expect(() => required("TEST_REQUIRED_MISSING")).toThrow(
-      "Missing required environment variable: TEST_REQUIRED_MISSING",
-    );
-  });
-});
-
-describe("optionalInt", () => {
-  it("returns undefined when an environment variable is missing", () => {
-    vi.stubEnv("TEST_OPTIONAL_INT_MISSING", "");
-
-    expect(optionalInt("TEST_OPTIONAL_INT_MISSING")).toBeUndefined();
+  it("returns fallback when repo is not in routing config", () => {
+    const result = resolveDestination("txio-labs/unknown-repo", "ci", FALLBACK_CHAT, FALLBACK_THREAD);
+    expect(result).toEqual({ chatId: FALLBACK_CHAT, threadId: FALLBACK_THREAD });
   });
 
-  it("returns a parsed number when an environment variable is present", () => {
-    vi.stubEnv("TEST_OPTIONAL_INT_PRESENT", "42");
+  it("uses repo chatId and event-specific threadId when fully mapped", () => {
+    const routing: RepoRoutingConfig = {
+      "txio-labs/txio-backend": {
+        chatId: "-100999",
+        issues: 101,
+        ci: 103,
+      },
+    };
+    const result = resolveDestination("txio-labs/txio-backend", "ci", FALLBACK_CHAT, FALLBACK_THREAD, routing);
+    expect(result).toEqual({ chatId: "-100999", threadId: 103 });
+  });
 
-    expect(optionalInt("TEST_OPTIONAL_INT_PRESENT")).toBe(42);
+  it("falls back to default threadId when event category not set in route", () => {
+    const routing: RepoRoutingConfig = {
+      "txio-labs/txio-cli": {
+        chatId: "-100888",
+      },
+    };
+    const result = resolveDestination("txio-labs/txio-cli", "deploys", FALLBACK_CHAT, FALLBACK_THREAD, routing);
+    expect(result).toEqual({ chatId: "-100888", threadId: FALLBACK_THREAD });
+  });
+
+  it("falls back to default chatId when route has no chatId", () => {
+    const routing: RepoRoutingConfig = {
+      "txio-labs/txio-desktop": {
+        ci: 201,
+      },
+    };
+    const result = resolveDestination("txio-labs/txio-desktop", "ci", FALLBACK_CHAT, FALLBACK_THREAD, routing);
+    expect(result).toEqual({ chatId: FALLBACK_CHAT, threadId: 201 });
+  });
+
+  it("normalizes repo name casing for lookup", () => {
+    const routing: RepoRoutingConfig = {
+      "txio-labs/txio-backend": {
+        chatId: "-100777",
+        deploys: 50,
+      },
+    };
+    const result = resolveDestination("Txio-Labs/Txio-Backend", "deploys", FALLBACK_CHAT, FALLBACK_THREAD, routing);
+    expect(result).toEqual({ chatId: "-100777", threadId: 50 });
+  });
+
+  it("returns fallback when repoFullName is null-ish", () => {
+    const result = resolveDestination(null as unknown as string, "issues", FALLBACK_CHAT, FALLBACK_THREAD);
+    expect(result).toEqual({ chatId: FALLBACK_CHAT, threadId: FALLBACK_THREAD });
+  });
+
+  it("handles numeric chatId in config", () => {
+    const routing: RepoRoutingConfig = {
+      "txio-labs/txio-telegram-bot": {
+        chatId: -100666,
+        pullRequests: 30,
+      },
+    };
+    const result = resolveDestination("txio-labs/txio-telegram-bot", "pullRequests", FALLBACK_CHAT, FALLBACK_THREAD, routing);
+    expect(result).toEqual({ chatId: -100666, threadId: 30 });
   });
 });

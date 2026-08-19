@@ -28,7 +28,13 @@ Ops bot for the Txio team.
    `application/x-www-form-urlencoded` — you must change this), and a
    secret matching `GITHUB_WEBHOOK_SECRET`. Subscribe to: Issues, Pull
    requests, Workflow runs, Deployment statuses.
-6. Copy `.env.example` to `.env` and fill in the values above.
+6. **(Optional) Set GITHUB_TOKEN**: for merge-conflict detection on private
+   repos and to avoid rate limits on public repos, create a fine-grained
+   personal access token (PAT) or GitHub App installation token with
+   `pull_requests: read` scope and set it as `GITHUB_TOKEN`. Without this,
+   merge-conflict alerts will not work for private repos and may fail on
+   public repos due to the 60 requests/hour unauthenticated rate limit.
+7. Copy `.env.example` to `.env` and fill in the values above.
 
 ### Optional: per-topic and DM routing
 
@@ -43,6 +49,39 @@ routing to work.
   `getUpdates` for that message's `"chat":{"id": ...}` (your personal chat
   id, a positive number). Set `PULL_REQUEST_CHAT_ID` — pull request
   notifications go there instead of the group.
+
+### Optional: multi-repo routing
+
+When the bot serves multiple repositories, you can route each repo's
+notifications to a distinct chat or forum topic. Create a JSON file
+(modelled on `repo-routing.example.json`) and set
+`REPO_ROUTING_CONFIG_PATH` to its path:
+
+```json
+{
+  "txio-labs/txio-backend": {
+    "chatId": "-1001234567890",
+    "issues": 101,
+    "pullRequests": 102,
+    "ci": 103,
+    "deploys": 104
+  },
+  "txio-labs/txio-cli": {
+    "chatId": "-1001234567890",
+    "deploys": 105
+  }
+}
+```
+
+Each key is a `repository.full_name` (case-insensitive). The value is an
+object with:
+
+- `chatId` (optional) — overrides `TELEGRAM_CHAT_ID` for that repo.
+- `issues` / `pullRequests` / `ci` / `deploys` (optional) — overrides
+  the corresponding `TOPIC_THREAD_*` for that event type in that chat.
+
+Repos not present in the file, or event types left blank, fall back to the
+defaults (`TELEGRAM_CHAT_ID` and `TOPIC_THREAD_*` env vars).
 
 ## Run
 
