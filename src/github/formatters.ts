@@ -1,8 +1,9 @@
 import type { EmitterWebhookEvent } from "@octokit/webhooks";
+import { InlineKeyboard } from "grammy";
 import { escapeHtml } from "../utils/html.js";
 
-function link(url: string, label: string): string {
-  return `<a href="${url}">${escapeHtml(label)}</a>`;
+export function link(url: string, label: string): string {
+  return `<a href="${escapeHtml(url)}">${escapeHtml(label)}</a>`;
 }
 
 export function formatIssueEvent({ payload }: EmitterWebhookEvent<"issues">): string {
@@ -15,18 +16,56 @@ export function formatIssueEvent({ payload }: EmitterWebhookEvent<"issues">): st
   );
 }
 
-export function formatPullRequestEvent({
-  payload,
-}: EmitterWebhookEvent<"pull_request">): string {
-  const { action, pull_request: pr, repository } = payload;
+export function formatPullRequestClosedEvent(
+  event: EmitterWebhookEvent<"pull_request">,
+  format: string,
+): { text: string; parseMode?: "HTML"; replyMarkup?: unknown } {
+  const { action, pull_request: pr, repository } = event.payload;
   const merged = action === "closed" && pr.merged;
   const label = merged ? "merged" : action;
-  const icon = action === "opened" ? "🆕" : merged ? "🎉" : action === "reopened" ? "🔁" : "❌";
-  return (
+  const icon = merged ? "🎉" : action === "reopened" ? "🔁" : "❌";
+
+  if (format === "plain_text") {
+    const text = `${icon} Pull request ${label} in ${repository.full_name}\n#${pr.number} ${pr.title}\nby ${pr.user?.login ?? "unknown"}`;
+    return { text, parseMode: undefined };
+  }
+
+  const htmlText =
     `${icon} Pull request ${label} in ${link(repository.html_url, repository.full_name)}\n` +
     `${link(pr.html_url, `#${pr.number} ${pr.title}`)}\n` +
-    `by ${escapeHtml(pr.user?.login ?? "unknown")}`
-  );
+    `by ${escapeHtml(pr.user?.login ?? "unknown")}`;
+
+  if (format === "inline_buttons") {
+    const keyboard = new InlineKeyboard().url("View Pull Request", pr.html_url);
+    return { text: htmlText, parseMode: "HTML", replyMarkup: keyboard };
+  }
+
+  return { text: htmlText, parseMode: "HTML" };
+}
+
+export function formatPullRequestOpenedEvent(
+  event: EmitterWebhookEvent<"pull_request">,
+  format: string
+): { text: string; parseMode?: "HTML"; replyMarkup?: any } {
+  const { pull_request: pr, repository } = event.payload;
+
+  if (format === "plain_text") {
+    const text = `🆕 Pull request opened in ${repository.full_name}\n#${pr.number} ${pr.title}\nby ${pr.user?.login ?? "unknown"}`;
+    return { text, parseMode: undefined };
+  }
+
+  const htmlText =
+    `🆕 Pull request opened in ${link(repository.html_url, repository.full_name)}\n` +
+    `${link(pr.html_url, `#${pr.number} ${pr.title}`)}\n` +
+    `by ${escapeHtml(pr.user?.login ?? "unknown")}`;
+
+  if (format === "inline_buttons") {
+    const keyboard = new InlineKeyboard().url("View Pull Request", pr.html_url);
+    return { text: htmlText, parseMode: "HTML", replyMarkup: keyboard };
+  }
+
+  // format === "markdown_summary" or default
+  return { text: htmlText, parseMode: "HTML" };
 }
 
 export function formatMergeConflictEvent(
