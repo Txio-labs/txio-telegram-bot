@@ -102,3 +102,35 @@ export function formatDeploymentStatusEvent({
     )})\n` + (status.log_url ? link(status.log_url, "logs") : "")
   );
 }
+
+export function formatBranchCreatedEvent({
+  payload,
+}: EmitterWebhookEvent<"create">): string {
+  const { ref, repository, sender } = payload;
+  return (
+    `🌿 Branch created in ${link(repository.html_url, repository.full_name)}\n` +
+    `${escapeHtml(ref)} by ${escapeHtml(sender?.login ?? "unknown")}`
+  );
+}
+
+export function formatBranchDeletedEvent({
+  payload,
+}: EmitterWebhookEvent<"delete">): string {
+  const { ref, repository, sender } = payload;
+  return (
+    `🗑️ Branch deleted in ${link(repository.html_url, repository.full_name)}\n` +
+    `${escapeHtml(ref)} by ${escapeHtml(sender?.login ?? "unknown")}`
+  );
+}
+
+export function formatForcePushEvent({
+  payload,
+}: EmitterWebhookEvent<"push">): string {
+  const { ref, repository, sender, compare } = payload;
+  const branch = ref.replace(/^refs\/heads\//, "");
+  return (
+    `⚠️ Force push to ${escapeHtml(branch)} in ${link(repository.html_url, repository.full_name)}\n` +
+    `${link(compare, "view changes")}\n` +
+    `by ${escapeHtml(sender?.login ?? "unknown")}`
+  );
+}
