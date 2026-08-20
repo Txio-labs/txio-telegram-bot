@@ -24,6 +24,31 @@ completion event still surfaces every outcome, including cancelled runs.
 Only `workflow_run.completed` is subscribed to in
 `src/github/webhooks.ts`.
 
+### Stale PR/issue reminders
+
+The bot is otherwise fully webhook-driven, but it also runs a scheduled job
+that posts a daily digest of stale open PRs and issues. Anything with no
+activity (`updated_at`) for `STALE_THRESHOLD_DAYS` (default `7`) is grouped
+into a single digest message per destination chat — one message listing all
+stale items, not one message per item. Repos with nothing stale are skipped
+quietly.
+
+- **Schedule**: `STALE_REMINDER_CRON` (default `0 9 * * *` — 09:00 UTC).
+  Standard cron syntax; an invalid expression disables the reminder and logs
+  a warning.
+- **Tracked repos**: the keys of the `REPO_ROUTING_CONFIG_PATH` file, or
+  `STALE_REPO_NAMES` (comma-separated) when no routing file is set. Each
+  digest is routed to the repo's configured chat/topic (see
+  [multi-repo routing](#optional-multi-repo-routing)).
+- **Rate limits**: each repo is queried with a single
+  `GET /repos/{repo}/issues?state=open` call (the issues endpoint includes
+  pull requests). Set `GITHUB_TOKEN` to avoid the unauthenticated
+  60 requests/hour limit when monitoring several repos.
+- **Failures**: per-repo API errors and per-message send errors are logged
+  and never crash the service or abort the rest of the job.
+- **Message size**: digests are capped below Telegram's 4096-character limit;
+  overflow items are dropped and reported with a "…and N more" footer.
+
 ## Setup
 
 1. **Create the bot**: message [@BotFather](https://t.me/BotFather) on
