@@ -1,4 +1,15 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import {
+  isDuplicateDelivery,
+  isMergeConflicted,
+  seenDeliveries,
+  webhooks,
+} from "./webhooks.js";
+import {
+  formatDependencyUpdateEvent,
+  formatPullRequestOpenedEvent,
+} from "./formatters.js";
+import { config } from "../config.js";
 
 // Must set required env vars before any module under test is imported
 vi.hoisted(() => {
@@ -9,24 +20,24 @@ vi.hoisted(() => {
   process.env.PUBLIC_URL = "https://example.com";
 });
 
-// Mock sendMessage so we can spy on it across all tests
-vi.mock("../telegram/client.js", () => ({
-  sendMessage: vi.fn().mockResolvedValue(undefined),
+// Mock sendMessage from telegram client and resolveDestination from config.
+// These must be created via vi.hoisted() because vi.mock() factories below
+// are hoisted above regular top-level const declarations.
+const DEFAULT_DESTINATION = { chatId: "-1000000", threadId: undefined as number | undefined, labels: undefined as string[] | undefined };
+const { mockSendMessage, mockResolveDestination } = vi.hoisted(() => ({
+  mockSendMessage: vi.fn().mockResolvedValue(undefined),
+  mockResolveDestination: vi.fn().mockReturnValue({
+    chatId: "-1000000",
+    threadId: undefined,
+  }),
 }));
 
-// Stub formatters — return minimal shapes so webhook handlers don't throw
-vi.mock("./formatters.js", () => ({
-  formatIssueEvent: vi.fn(() => "issue text"),
-  formatPullRequestOpenedEvent: vi.fn(() => ({ text: "pr opened text", parseMode: undefined, replyMarkup: undefined })),
-  formatPullRequestClosedEvent: vi.fn(() => ({ text: "pr closed text", parseMode: undefined, replyMarkup: undefined })),
-  formatMergeConflictEvent: vi.fn(() => "merge conflict text"),
-  formatWorkflowRunEvent: vi.fn(() => "workflow text"),
-  formatDeploymentStatusEvent: vi.fn(() => "deploy text"),
-}));
-
-// Mock the config module. Keep actual pure helpers (labelMatchesAllowlist,
-// resolveDestination) so label-gate tests get real logic; make resolveDestination
-// a spy so tests can control what it returns.
+// Mock the config module. Formatters are NOT mocked — several describe blocks
+// below assert on real formatter output, and the label-gate tests only assert
+// on whether sendMessage was called, so real formatters work for both.
+// labelMatchesAllowlist is kept as the real implementation (via importOriginal)
+// because webhooks.ts imports and calls it directly for the label-gate feature;
+// only `config` and `resolveDestination` are replaced with test doubles.
 vi.mock("../config.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../config.js")>();
   return {
@@ -41,28 +52,25 @@ vi.mock("../config.js", async (importOriginal) => {
         pullRequests: undefined,
         ci: undefined,
         deploys: undefined,
+        branches: undefined,
+        security: undefined,
       },
       prOpened: { channel: "main_chat", format: "markdown_summary" },
       prClosed: { channel: "main_chat", format: "markdown_summary" },
+      securityAlert: { channel: "main_chat", format: "markdown_summary" },
+      securityAlertChatId: undefined,
       pullRequestChatId: undefined,
     },
-    resolveDestination: vi.fn(actual.resolveDestination),
-    labelMatchesAllowlist: actual.labelMatchesAllowlist,
+    resolveDestination: mockResolveDestination,
   };
 });
 
-// All imports must be after vi.mock declarations (hoisted) but before describe blocks
-import { isMergeConflicted, webhooks, seenDeliveries } from "./webhooks.js";
-import { config, resolveDestination } from "../config.js";
-import { sendMessage } from "../telegram/client.js";
+vi.mock("../telegram/client.js", () => ({
+  sendMessage: mockSendMessage,
+}));
 
 const mockFetch = vi.fn();
 global.fetch = mockFetch;
-
-const mockSendMessage = sendMessage as ReturnType<typeof vi.fn>;
-const mockResolveDestination = resolveDestination as ReturnType<typeof vi.fn>;
-
-// ── isMergeConflicted unit tests ─────────────────────────────────────
 
 describe("isMergeConflicted", () => {
   beforeEach(() => {
@@ -196,6 +204,9 @@ describe("isMergeConflicted", () => {
 });
 
 // ── Label-filter gate — helpers ───────────────────────────────────────
+// NOTE: repository.html_url is required because these tests exercise the
+// real formatIssueEvent/formatPullRequestOpenedEvent (formatters are not
+// mocked in this file) — omitting it would throw inside escapeHtml().
 
 function makeIssuePayload(labels: string[] = [], action = "opened") {
   return {
@@ -206,7 +217,7 @@ function makeIssuePayload(labels: string[] = [], action = "opened") {
       html_url: "https://github.com/owner/repo/issues/1",
       labels: labels.map((name) => ({ name })),
     },
-    repository: { full_name: "owner/repo" },
+    repository: { full_name: "owner/repo", html_url: "https://github.com/owner/repo" },
   };
 }
 
@@ -220,7 +231,7 @@ function makePRPayload(labels: string[] = [], action = "opened") {
       labels: labels.map((name) => ({ name })),
       mergeable: true,
     },
-    repository: { full_name: "owner/repo" },
+    repository: { full_name: "owner/repo", html_url: "https://github.com/owner/repo" },
   };
 }
 
@@ -230,36 +241,37 @@ describe("label-filter gate — issues events", () => {
   beforeEach(() => {
     mockSendMessage.mockClear();
     mockResolveDestination.mockClear();
+    mockResolveDestination.mockReturnValue({ ...DEFAULT_DESTINATION });
     seenDeliveries.clear();
   });
 
   it("forwards issue event when no allowlist is configured", async () => {
     mockResolveDestination.mockReturnValue({ chatId: "-1000000", threadId: undefined });
-    await webhooks.receive({ id: "iss-1", name: "issues", payload: makeIssuePayload(["bug"]) });
+    await webhooks.receive({ id: "iss-1", name: "issues", payload: makeIssuePayload(["bug"]) as any });
     expect(mockSendMessage).toHaveBeenCalledOnce();
   });
 
   it("forwards issue event when payload label matches allowlist", async () => {
     mockResolveDestination.mockReturnValue({ chatId: "-1000000", threadId: undefined, labels: ["urgent", "bug"] });
-    await webhooks.receive({ id: "iss-2", name: "issues", payload: makeIssuePayload(["bug"]) });
+    await webhooks.receive({ id: "iss-2", name: "issues", payload: makeIssuePayload(["bug"]) as any });
     expect(mockSendMessage).toHaveBeenCalledOnce();
   });
 
   it("suppresses issue event when payload label does not match allowlist", async () => {
     mockResolveDestination.mockReturnValue({ chatId: "-1000000", threadId: undefined, labels: ["urgent"] });
-    await webhooks.receive({ id: "iss-3", name: "issues", payload: makeIssuePayload(["bug"]) });
+    await webhooks.receive({ id: "iss-3", name: "issues", payload: makeIssuePayload(["bug"]) as any });
     expect(mockSendMessage).not.toHaveBeenCalled();
   });
 
   it("suppresses issue event when payload has zero labels and allowlist is set", async () => {
     mockResolveDestination.mockReturnValue({ chatId: "-1000000", threadId: undefined, labels: ["urgent"] });
-    await webhooks.receive({ id: "iss-4", name: "issues", payload: makeIssuePayload([]) });
+    await webhooks.receive({ id: "iss-4", name: "issues", payload: makeIssuePayload([]) as any });
     expect(mockSendMessage).not.toHaveBeenCalled();
   });
 
   it("is case-sensitive: 'Urgent' does not match 'urgent' allowlist", async () => {
     mockResolveDestination.mockReturnValue({ chatId: "-1000000", threadId: undefined, labels: ["urgent"] });
-    await webhooks.receive({ id: "iss-5", name: "issues", payload: makeIssuePayload(["Urgent"]) });
+    await webhooks.receive({ id: "iss-5", name: "issues", payload: makeIssuePayload(["Urgent"]) as any });
     expect(mockSendMessage).not.toHaveBeenCalled();
   });
 });
@@ -270,30 +282,234 @@ describe("label-filter gate — pull_request events", () => {
   beforeEach(() => {
     mockSendMessage.mockClear();
     mockResolveDestination.mockClear();
+    mockResolveDestination.mockReturnValue({ ...DEFAULT_DESTINATION });
     seenDeliveries.clear();
   });
 
   it("forwards PR opened event when no allowlist is configured", async () => {
     mockResolveDestination.mockReturnValue({ chatId: "-1000000", threadId: undefined });
-    await webhooks.receive({ id: "pr-1", name: "pull_request", payload: makePRPayload(["feature"]) });
+    await webhooks.receive({ id: "pr-1", name: "pull_request", payload: makePRPayload(["feature"]) as any });
     expect(mockSendMessage).toHaveBeenCalled();
   });
 
   it("forwards PR opened event when payload label matches allowlist", async () => {
     mockResolveDestination.mockReturnValue({ chatId: "-1000000", threadId: undefined, labels: ["urgent", "feature"] });
-    await webhooks.receive({ id: "pr-2", name: "pull_request", payload: makePRPayload(["feature"]) });
+    await webhooks.receive({ id: "pr-2", name: "pull_request", payload: makePRPayload(["feature"]) as any });
     expect(mockSendMessage).toHaveBeenCalled();
   });
 
   it("suppresses PR opened event when payload label does not match allowlist", async () => {
     mockResolveDestination.mockReturnValue({ chatId: "-1000000", threadId: undefined, labels: ["urgent"] });
-    await webhooks.receive({ id: "pr-3", name: "pull_request", payload: makePRPayload(["bug"]) });
+    await webhooks.receive({ id: "pr-3", name: "pull_request", payload: makePRPayload(["bug"]) as any });
     expect(mockSendMessage).not.toHaveBeenCalled();
   });
 
   it("suppresses PR opened event when payload has zero labels and allowlist is set", async () => {
     mockResolveDestination.mockReturnValue({ chatId: "-1000000", threadId: undefined, labels: ["urgent"] });
-    await webhooks.receive({ id: "pr-4", name: "pull_request", payload: makePRPayload([]) });
+    await webhooks.receive({ id: "pr-4", name: "pull_request", payload: makePRPayload([]) as any });
     expect(mockSendMessage).not.toHaveBeenCalled();
+  });
+});
+
+describe("formatDependencyUpdateEvent", () => {
+  const baseEvent = {
+    id: "test-event",
+    payload: {
+      action: "opened" as const,
+      repository: {
+        full_name: "txio-labs/txio",
+        html_url: "https://github.com/txio-labs/txio",
+      },
+      pull_request: {
+        number: 42,
+        title: "Bump actions/checkout from v3 to v4",
+        html_url: "https://github.com/txio-labs/txio/pull/42",
+        user: { login: "dependabot[bot]" },
+      },
+    },
+  };
+
+  it("should return plain text without parse mode", () => {
+    const result = formatDependencyUpdateEvent(baseEvent as any, "plain_text");
+    expect(result.text).toBe(
+      "📦 Dependency update in txio-labs/txio\n#42 Bump actions/checkout from v3 to v4\nby dependabot[bot]"
+    );
+    expect(result.parseMode).toBeUndefined();
+    expect(result.replyMarkup).toBeUndefined();
+  });
+
+  it("should return HTML with links for markdown_summary format", () => {
+    const result = formatDependencyUpdateEvent(baseEvent as any, "markdown_summary");
+    expect(result.text).toBe(
+      '📦 Dependency update in <a href="https://github.com/txio-labs/txio">txio-labs/txio</a>\n' +
+        '<a href="https://github.com/txio-labs/txio/pull/42">#42 Bump actions/checkout from v3 to v4</a>\n' +
+        "by dependabot[bot]"
+    );
+    expect(result.parseMode).toBe("HTML");
+    expect(result.replyMarkup).toBeUndefined();
+  });
+
+  it("should return HTML with links for default format", () => {
+    const result = formatDependencyUpdateEvent(baseEvent as any, "default");
+    expect(result.text).toBe(
+      '📦 Dependency update in <a href="https://github.com/txio-labs/txio">txio-labs/txio</a>\n' +
+        '<a href="https://github.com/txio-labs/txio/pull/42">#42 Bump actions/checkout from v3 to v4</a>\n' +
+        "by dependabot[bot]"
+    );
+    expect(result.parseMode).toBe("HTML");
+  });
+
+  it("should escape the user login in HTML format", () => {
+    const event = {
+      ...baseEvent,
+      payload: {
+        ...baseEvent.payload,
+        pull_request: {
+          ...baseEvent.payload.pull_request,
+          user: { login: "<script>alert('xss')</script>" },
+        },
+      },
+    };
+    const result = formatDependencyUpdateEvent(event as any, "markdown_summary");
+    expect(result.text).toContain("&lt;script&gt;alert(&#x27;xss&#x27;)&lt;/script&gt;");
+  });
+});
+
+describe("formatPullRequestOpenedEvent", () => {
+  const baseEvent = {
+    id: "test-event",
+    payload: {
+      action: "opened" as const,
+      repository: {
+        full_name: "txio-labs/txio",
+        html_url: "https://github.com/txio-labs/txio",
+      },
+      pull_request: {
+        number: 42,
+        title: "Add new feature",
+        html_url: "https://github.com/txio-labs/txio/pull/42",
+        user: { login: "human-dev" },
+      },
+    },
+  };
+
+  it("should return standard format for regular PRs", () => {
+    const result = formatPullRequestOpenedEvent(baseEvent as any, "markdown_summary");
+    expect(result.text).toBe(
+      '🆕 Pull request opened in <a href="https://github.com/txio-labs/txio">txio-labs/txio</a>\n' +
+        '<a href="https://github.com/txio-labs/txio/pull/42">#42 Add new feature</a>\n' +
+        "by human-dev"
+    );
+    expect(result.parseMode).toBe("HTML");
+  });
+});
+
+describe("pull_request.opened webhook branching", () => {
+  beforeEach(() => {
+    seenDeliveries.clear();
+    mockSendMessage.mockClear();
+    mockResolveDestination.mockClear();
+    mockResolveDestination.mockReturnValue({ ...DEFAULT_DESTINATION });
+  });
+
+  it("should use dependency formatter when PR has dependencies label", async () => {
+    await webhooks.receive({
+      id: "test-deps-1",
+      name: "pull_request",
+      payload: {
+        action: "opened",
+        repository: {
+          full_name: "txio-labs/txio",
+          html_url: "https://github.com/txio-labs/txio",
+        },
+        pull_request: {
+          number: 123,
+          title: "Bump dependencies",
+          html_url: "https://github.com/txio-labs/txio/pull/123",
+          user: { login: "dependabot[bot]" },
+          labels: [{ name: "dependencies" }],
+        },
+      } as any,
+    });
+
+    expect(mockSendMessage).toHaveBeenCalledWith(
+      "-1000000",
+      expect.stringContaining("📦 Dependency update"),
+      undefined,
+      expect.objectContaining({ parseMode: "HTML" })
+    );
+  });
+
+  it("should use standard formatter when PR has no dependencies label", async () => {
+    await webhooks.receive({
+      id: "test-normal-1",
+      name: "pull_request",
+      payload: {
+        action: "opened",
+        repository: {
+          full_name: "txio-labs/txio",
+          html_url: "https://github.com/txio-labs/txio",
+        },
+        pull_request: {
+          number: 124,
+          title: "Add new feature",
+          html_url: "https://github.com/txio-labs/txio/pull/124",
+          user: { login: "human-dev" },
+          labels: [],
+        },
+      } as any,
+    });
+
+    expect(mockSendMessage).toHaveBeenCalledWith(
+      "-1000000",
+      expect.stringContaining("🆕 Pull request opened"),
+      undefined,
+      expect.objectContaining({ parseMode: "HTML" })
+    );
+  });
+
+  it("should treat PRs with dependencies label alongside other labels as dependency updates", async () => {
+    await webhooks.receive({
+      id: "test-deps-multi-1",
+      name: "pull_request",
+      payload: {
+        action: "opened",
+        repository: {
+          full_name: "txio-labs/txio",
+          html_url: "https://github.com/txio-labs/txio",
+        },
+        pull_request: {
+          number: 125,
+          title: "Bump rust dependencies",
+          html_url: "https://github.com/txio-labs/txio/pull/125",
+          user: { login: "dependabot[bot]" },
+          labels: [
+            { name: "dependencies" },
+            { name: "rust" },
+            { name: "ci" },
+          ],
+        },
+      } as any,
+    });
+
+    expect(mockSendMessage).toHaveBeenCalledWith(
+      "-1000000",
+      expect.stringContaining("📦 Dependency update"),
+      undefined,
+      expect.objectContaining({ parseMode: "HTML" })
+    );
+  });
+});
+
+describe("isDuplicateDelivery", () => {
+  beforeEach(() => {
+    seenDeliveries.clear();
+  });
+
+  it("detects duplicate deliveries", () => {
+    expect(isDuplicateDelivery("deliv-1")).toBe(false);
+    expect(isDuplicateDelivery("deliv-1")).toBe(true);
+    expect(isDuplicateDelivery("deliv-2")).toBe(false);
+    expect(isDuplicateDelivery("deliv-2")).toBe(true);
   });
 });

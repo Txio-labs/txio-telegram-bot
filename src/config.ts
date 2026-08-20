@@ -14,13 +14,26 @@ function optionalInt(name: string): number | undefined {
   return value ? Number(value) : undefined;
 }
 
+function optionalPositiveInt(name: string, fallback: number): number {
+  const raw = process.env[name];
+  if (raw === undefined || raw === "") return fallback;
+  const parsed = Number(raw);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
+}
+
 function optionalString(name: string): string | undefined {
   return process.env[name];
 }
 
 // ── Repo routing ──────────────────────────────────────────────────────
 
-export type EventCategory = "issues" | "pullRequests" | "ci" | "deploys";
+export type EventCategory =
+  | "issues"
+  | "pullRequests"
+  | "ci"
+  | "deploys"
+  | "branches"
+  | "security";
 
 export type EventCategoryConfig = {
   threadId?: number;
@@ -34,6 +47,8 @@ export type RepoRoute = {
   pullRequests?: number | EventCategoryConfig;
   ci?: number | EventCategoryConfig;
   deploys?: number | EventCategoryConfig;
+  branches?: number | EventCategoryConfig;
+  security?: number | EventCategoryConfig;
 };
 
 export type RepoRoutingConfig = Record<string, RepoRoute>;
@@ -108,7 +123,7 @@ function loadRepoRoutingConfig(): RepoRoutingConfig {
     );
   }
 
-  const eventCategoryFields = ["issues", "pullRequests", "ci", "deploys"] as const;
+  const eventCategoryFields = ["issues", "pullRequests", "ci", "deploys", "branches", "security"] as const;
 
   for (const [repo, route] of Object.entries(parsed as Record<string, unknown>)) {
     if (typeof route !== "object" || route === null || Array.isArray(route)) {
@@ -117,7 +132,7 @@ function loadRepoRoutingConfig(): RepoRoutingConfig {
       );
     }
     for (const key of Object.keys(route as Record<string, unknown>)) {
-      const allowed = ["chatId", "issues", "pullRequests", "ci", "deploys"];
+      const allowed = ["chatId", "issues", "pullRequests", "ci", "deploys", "branches", "security"];
       if (!allowed.includes(key)) {
         throw new Error(
           `REPO_ROUTING_CONFIG_PATH "${configPath}": unknown key "${key}" in entry for "${repo}"`,
@@ -134,6 +149,18 @@ function loadRepoRoutingConfig(): RepoRoutingConfig {
 }
 
 const repoRouting = loadRepoRoutingConfig();
+
+// Repos the stale-reminder job monitors. Prefer the repos already mapped in
+// REPO_ROUTING_CONFIG_PATH; STALE_REPO_NAMES is the fallback when no routing
+// file is configured (e.g. a single-repo deployment).
+const trackedRepos = (() => {
+  const fromRouting = Object.keys(repoRouting).map((repo) => repo.toLowerCase());
+  if (fromRouting.length > 0) return fromRouting;
+  return (process.env.STALE_REPO_NAMES ?? "")
+    .split(",")
+    .map((repo) => repo.trim().toLowerCase())
+    .filter(Boolean);
+})();
 
 export function resolveDestination(
   repoFullName: string | undefined,
@@ -206,6 +233,8 @@ export const config = {
     pullRequests: optionalInt("TOPIC_THREAD_PULL_REQUESTS"),
     ci: optionalInt("TOPIC_THREAD_CI"),
     deploys: optionalInt("TOPIC_THREAD_DEPLOYS"),
+    branches: optionalInt("TOPIC_THREAD_BRANCHES"),
+    security: optionalInt("TOPIC_THREAD_SECURITY"),
   },
   prOpened: {
     channel: process.env.PR_OPENED_CHANNEL ?? "main_chat",
@@ -215,12 +244,28 @@ export const config = {
     channel: process.env.PR_CLOSED_CHANNEL ?? "main_chat",
     format: process.env.PR_CLOSED_FORMAT ?? "markdown_summary",
   },
+  securityAlert: {
+    channel: process.env.SECURITY_ALERT_CHANNEL ?? "main_chat",
+    format: process.env.SECURITY_ALERT_FORMAT ?? "markdown_summary",
+  },
+  // If set, security alert notifications go to this chat (e.g. your personal DM)
+  // instead of the group.
+  securityAlertChatId: process.env.SECURITY_ALERT_CHAT_ID || undefined,
   // If set, pull request notifications go to this chat (e.g. your personal DM)
   // instead of the group.
   pullRequestChatId: process.env.PULL_REQUEST_CHAT_ID || undefined,
   // Optional: GitHub token for merge-conflict detection on private repos.
   // A fine-grained PAT or GitHub App installation token with pull_requests: read scope.
   githubToken: optionalString("GITHUB_TOKEN"),
+  // Scheduled digest of stale (no recent activity) open PRs/issues.
+  staleReminder: {
+    // Cron expression for the daily reminder. Default: 09:00 UTC.
+    cron: process.env.STALE_REMINDER_CRON ?? "0 9 * * *",
+    // An open PR/issue counts as stale when its updated_at is older than this.
+    thresholdDays: optionalPositiveInt("STALE_THRESHOLD_DAYS", 7),
+    // Repos to query; derived from REPO_ROUTING_CONFIG_PATH (or STALE_REPO_NAMES).
+    repos: trackedRepos,
+  },
 };
 
 // Log a warning if githubToken is not set, since merge-conflict detection will be degraded.
