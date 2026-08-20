@@ -2,7 +2,11 @@ import { Webhooks } from "@octokit/webhooks";
 import { config, resolveDestination } from "../config.js";
 import { sendMessage } from "../telegram/client.js";
 import {
+  formatBranchCreatedEvent,
+  formatBranchDeletedEvent,
+  formatCommentEvent,
   formatDeploymentStatusEvent,
+  formatForcePushEvent,
   formatIssueEvent,
   formatMergeConflictEvent,
   formatPullRequestClosedEvent,
@@ -168,6 +172,21 @@ webhooks.on("pull_request.closed", async (event) => {
   conflictedPullRequests.delete(`${repository.full_name}#${pr.number}`);
 });
 
+webhooks.on("issue_comment.created", async (event) => {
+  if (isDuplicateDelivery(event.id)) return;
+  const { issue, comment, repository } = event.payload;
+  // Skip automation (e.g. other bots commenting) to avoid notification loops.
+  if (comment.user?.type === "Bot") return;
+  const isPr = Boolean(issue.pull_request);
+  const { chatId, threadId } = resolveDestination(
+    repository?.full_name,
+    isPr ? "pullRequests" : "issues",
+    config.telegramChatId,
+    isPr ? config.topicThreads.pullRequests : config.topicThreads.issues,
+  );
+  await sendMessage(chatId, formatCommentEvent(event), threadId);
+});
+
 webhooks.on("workflow_run.completed", async (event) => {
   if (isDuplicateDelivery(event.id)) return;
   const message = formatWorkflowRunEvent(event);
@@ -194,6 +213,55 @@ webhooks.on("deployment_status.created", async (event) => {
   );
 
   await sendMessage(chatId, formatDeploymentStatusEvent(event), threadId);
+});
+
+export function isBranchRef(refType: string | undefined): boolean {
+  return refType === "branch";
+}
+
+export function isForcePushToDefaultBranch(
+  ref: string | undefined,
+  forced: boolean | undefined,
+  defaultBranch: string | undefined,
+): boolean {
+  return forced === true && !!ref && !!defaultBranch && ref === `refs/heads/${defaultBranch}`;
+}
+
+webhooks.on("create", async (event) => {
+  if (isDuplicateDelivery(event.id)) return;
+  if (!isBranchRef(event.payload.ref_type)) return;
+  const { chatId, threadId } = resolveDestination(
+    event.payload.repository?.full_name,
+    "branches",
+    config.telegramChatId,
+    config.topicThreads.branches,
+  );
+  await sendMessage(chatId, formatBranchCreatedEvent(event), threadId);
+});
+
+webhooks.on("delete", async (event) => {
+  if (isDuplicateDelivery(event.id)) return;
+  if (!isBranchRef(event.payload.ref_type)) return;
+  const { chatId, threadId } = resolveDestination(
+    event.payload.repository?.full_name,
+    "branches",
+    config.telegramChatId,
+    config.topicThreads.branches,
+  );
+  await sendMessage(chatId, formatBranchDeletedEvent(event), threadId);
+});
+
+webhooks.on("push", async (event) => {
+  if (isDuplicateDelivery(event.id)) return;
+  const { ref, forced, repository } = event.payload;
+  if (!isForcePushToDefaultBranch(ref, forced, repository?.default_branch)) return;
+  const { chatId, threadId } = resolveDestination(
+    repository?.full_name,
+    "branches",
+    config.telegramChatId,
+    config.topicThreads.branches,
+  );
+  await sendMessage(chatId, formatForcePushEvent(event), threadId);
 });
 
 webhooks.onError((error) => {
