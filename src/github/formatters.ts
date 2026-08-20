@@ -68,6 +68,25 @@ export function formatPullRequestOpenedEvent(
   return { text: htmlText, parseMode: "HTML" };
 }
 
+export function formatDependencyUpdateEvent(
+  event: EmitterWebhookEvent<"pull_request">,
+  format: string,
+): { text: string; parseMode?: "HTML"; replyMarkup?: any } {
+  const { pull_request: pr, repository } = event.payload;
+
+  if (format === "plain_text") {
+    const text = `📦 Dependency update in ${repository.full_name}\n#${pr.number} ${pr.title}\nby ${pr.user?.login ?? "unknown"}`;
+    return { text, parseMode: undefined };
+  }
+
+  const htmlText =
+    `📦 Dependency update in ${link(repository.html_url, repository.full_name)}\n` +
+    `${link(pr.html_url, `#${pr.number} ${pr.title}`)}\n` +
+    `by ${escapeHtml(pr.user?.login ?? "unknown")}`;
+
+  return { text: htmlText, parseMode: "HTML" };
+}
+
 export function formatSecurityAlertEvent(
   event: EmitterWebhookEvent<"dependabot_alert">,
   format: string,

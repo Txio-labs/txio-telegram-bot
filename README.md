@@ -9,6 +9,8 @@ Ops bot for the Txio team.
   into the Telegram group. Each event type can optionally be routed to its own
   forum topic, and pull requests / security alerts can be routed to a private
   DM instead of the group.
+- Dependabot PRs labeled `dependencies` are formatted as a distinct
+  "Dependency update" notification instead of a standard PR notification.
 - Welcomes new members when they join the group.
 
 ## Setup
