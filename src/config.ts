@@ -2,7 +2,7 @@ import "dotenv/config";
 import { readFileSync } from "node:fs";
 import type { DeliveryChannel, DeliveryFormat, EventDeliveryConfig } from "./notifications/types.js";
 
-function required(name: string): string {
+export function required(name: string): string {
   const value = process.env[name];
   if (!value) {
     throw new Error(`Missing required environment variable: ${name}`);
@@ -10,7 +10,7 @@ function required(name: string): string {
   return value;
 }
 
-function optionalInt(name: string): number | undefined {
+export function optionalInt(name: string): number | undefined {
   const value = process.env[name];
   return value ? Number(value) : undefined;
 }
