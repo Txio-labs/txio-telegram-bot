@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { isMergeConflicted } from "./webhooks.js";
+import { isMergeConflicted, isDuplicateDelivery, seenDeliveries } from "./webhooks.js";
 import { config } from "../config.js";
 
 // Mock global fetch
@@ -173,5 +173,15 @@ describe("isMergeConflicted", () => {
 
     expect(result).toBe(false);
     expect(mockFetch).not.toHaveBeenCalled();
+  });
+});
+
+describe("Webhook deduplication", () => {
+  it("detects duplicate deliveries and bounds cache", () => {
+    seenDeliveries.clear();
+    expect(isDuplicateDelivery("deliv-1")).toBe(false);
+    expect(isDuplicateDelivery("deliv-1")).toBe(true);
+    expect(isDuplicateDelivery("deliv-2")).toBe(false);
+    expect(isDuplicateDelivery("deliv-2")).toBe(true);
   });
 });
