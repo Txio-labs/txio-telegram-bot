@@ -21,5 +21,18 @@
     "pullRequests": 107,
     "ci": 108,
     "deploys": 109
+  },
+  "txio-labs/txio-urgent-only": {
+    "chatId": "-1001234567890",
+    "issues": {
+      "threadId": 201,
+      "labels": ["urgent", "critical"]
+    },
+    "pullRequests": {
+      "threadId": 202,
+      "labels": ["urgent"]
+    },
+    "ci": 203,
+    "deploys": 204
   }
 }

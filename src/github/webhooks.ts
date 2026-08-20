@@ -1,5 +1,5 @@
 import { Webhooks } from "@octokit/webhooks";
-import { config, resolveDestination } from "../config.js";
+import { config, resolveDestination, labelMatchesAllowlist } from "../config.js";
 import { sendMessage } from "../telegram/client.js";
 import {
   formatDeploymentStatusEvent,
@@ -31,13 +31,24 @@ export function isDuplicateDelivery(id: string | undefined): boolean {
 
 webhooks.on(["issues.opened", "issues.closed", "issues.reopened"], async (event) => {
   if (isDuplicateDelivery(event.id)) return;
-  const { chatId, threadId } = resolveDestination(
+  const dest = resolveDestination(
     event.payload.repository?.full_name,
     "issues",
     config.telegramChatId,
     config.topicThreads.issues,
   );
-  await sendMessage(chatId, formatIssueEvent(event), threadId);
+  const payloadLabels = (event.payload.issue.labels ?? []).map((l) => l.name).filter((n): n is string => typeof n === "string");
+  if (!labelMatchesAllowlist(payloadLabels, dest.labels)) {
+    console.debug("[label-filter] suppressed issues event", {
+      repo: event.payload.repository?.full_name,
+      event: `issues.${event.payload.action}`,
+      deliveryId: event.id ?? "unknown",
+      payloadLabels,
+      allowlist: dest.labels,
+    });
+    return;
+  }
+  await sendMessage(dest.chatId, formatIssueEvent(event), dest.threadId);
 });
 
 webhooks.on(["pull_request.closed", "pull_request.reopened"], async (event) => {
@@ -48,15 +59,34 @@ webhooks.on(["pull_request.closed", "pull_request.reopened"], async (event) => {
   const repoFullName = event.payload.repository?.full_name;
   let targetChatId: string | number = config.telegramChatId;
   let threadId: number | undefined;
+  let allowlist: string[] | undefined;
 
   if (channel === "topic_thread") {
     const dest = resolveDestination(repoFullName, "pullRequests", config.telegramChatId, config.topicThreads.pullRequests);
     targetChatId = dest.chatId;
     threadId = dest.threadId;
+    allowlist = dest.labels;
   } else if (channel === "dm") {
     if (config.pullRequestChatId) {
       targetChatId = config.pullRequestChatId;
     }
+    const dest = resolveDestination(repoFullName, "pullRequests", config.telegramChatId, config.topicThreads.pullRequests);
+    allowlist = dest.labels;
+  } else {
+    const dest = resolveDestination(repoFullName, "pullRequests", config.telegramChatId, config.topicThreads.pullRequests);
+    allowlist = dest.labels;
+  }
+
+  const payloadLabels = (event.payload.pull_request.labels ?? []).map((l) => l.name).filter((n): n is string => typeof n === "string");
+  if (!labelMatchesAllowlist(payloadLabels, allowlist)) {
+    console.debug("[label-filter] suppressed pull_request event", {
+      repo: repoFullName,
+      event: `pull_request.${event.payload.action}`,
+      deliveryId: event.id ?? "unknown",
+      payloadLabels,
+      allowlist,
+    });
+    return;
   }
 
   await sendMessage(targetChatId, text, threadId, { parseMode, replyMarkup });
@@ -70,15 +100,34 @@ webhooks.on("pull_request.opened", async (event) => {
   const repoFullName = event.payload.repository?.full_name;
   let targetChatId: string | number = config.telegramChatId;
   let threadId: number | undefined;
+  let allowlist: string[] | undefined;
 
   if (channel === "topic_thread") {
     const dest = resolveDestination(repoFullName, "pullRequests", config.telegramChatId, config.topicThreads.pullRequests);
     targetChatId = dest.chatId;
     threadId = dest.threadId;
+    allowlist = dest.labels;
   } else if (channel === "dm") {
     if (config.pullRequestChatId) {
       targetChatId = config.pullRequestChatId;
     }
+    const dest = resolveDestination(repoFullName, "pullRequests", config.telegramChatId, config.topicThreads.pullRequests);
+    allowlist = dest.labels;
+  } else {
+    const dest = resolveDestination(repoFullName, "pullRequests", config.telegramChatId, config.topicThreads.pullRequests);
+    allowlist = dest.labels;
+  }
+
+  const payloadLabels = (event.payload.pull_request.labels ?? []).map((l) => l.name).filter((n): n is string => typeof n === "string");
+  if (!labelMatchesAllowlist(payloadLabels, allowlist)) {
+    console.debug("[label-filter] suppressed pull_request event", {
+      repo: repoFullName,
+      event: `pull_request.${event.payload.action}`,
+      deliveryId: event.id ?? "unknown",
+      payloadLabels,
+      allowlist,
+    });
+    return;
   }
 
   await sendMessage(targetChatId, text, threadId, { parseMode, replyMarkup });
@@ -109,15 +158,29 @@ export async function isMergeConflicted(
 webhooks.on(["pull_request.opened", "pull_request.synchronize", "pull_request.reopened"], async (event) => {
   if (isDuplicateDelivery(event.id)) return;
   const { pull_request: pr, repository } = event.payload;
-  if (!(await isMergeConflicted(pr, repository))) return;
-  const message = formatMergeConflictEvent(pr, repository);
-  const { chatId } = resolveDestination(
+
+  const dest = resolveDestination(
     repository?.full_name,
     "pullRequests",
     config.pullRequestChatId ?? config.telegramChatId,
     undefined,
   );
-  await sendMessage(chatId, message);
+
+  const payloadLabels = (pr.labels ?? []).map((l) => l.name).filter((n): n is string => typeof n === "string");
+  if (!labelMatchesAllowlist(payloadLabels, dest.labels)) {
+    console.debug("[label-filter] suppressed merge-conflict check", {
+      repo: repository?.full_name,
+      event: `pull_request.${event.payload.action}`,
+      deliveryId: event.id ?? "unknown",
+      payloadLabels,
+      allowlist: dest.labels,
+    });
+    return;
+  }
+
+  if (!(await isMergeConflicted(pr, repository))) return;
+  const message = formatMergeConflictEvent(pr, repository);
+  await sendMessage(dest.chatId, message);
 });
 
 webhooks.on("workflow_run.completed", async (event) => {
