@@ -13,11 +13,21 @@ vi.mock("../config.js", () => ({
     telegramChatId: "-1000000",
     githubToken: undefined,
     githubWebhookSecret: "fake:secret",
-    prOpened: {
-      channel: "main_chat",
-      format: "markdown_summary"
+    topicThreads: {
+      issues: 10,
+      pullRequests: 20,
+      ci: 30,
+      deploys: 40,
     },
   },
+  getDeliveryConfig: vi.fn((eventName: string) => ({
+    channel: "main_chat",
+    format: "markdown_summary"
+  })),
+  resolveDestination: vi.fn(() => ({
+    chatId: "-1000000",
+    threadId: undefined
+  }))
 }));
 
 describe("isMergeConflicted", () => {

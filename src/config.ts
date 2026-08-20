@@ -110,6 +110,19 @@ export function resolveDestination(
   return { chatId, threadId };
 }
 
+export interface EventDeliveryConfig {
+  channel: string;
+  format: string;
+}
+
+export function getDeliveryConfig(eventName: string): EventDeliveryConfig {
+  const envPrefix = eventName.toUpperCase().replace(/[^A-Z0-9]/g, "_");
+  return {
+    channel: process.env[`${envPrefix}_CHANNEL`] ?? "main_chat",
+    format: process.env[`${envPrefix}_FORMAT`] ?? "markdown_summary",
+  };
+}
+
 export const config = {
   port: Number(process.env.PORT ?? 3000),
   telegramBotToken: required("TELEGRAM_BOT_TOKEN"),
@@ -126,14 +139,6 @@ export const config = {
     pullRequests: optionalInt("TOPIC_THREAD_PULL_REQUESTS"),
     ci: optionalInt("TOPIC_THREAD_CI"),
     deploys: optionalInt("TOPIC_THREAD_DEPLOYS"),
-  },
-  prOpened: {
-    channel: process.env.PR_OPENED_CHANNEL ?? "main_chat",
-    format: process.env.PR_OPENED_FORMAT ?? "markdown_summary",
-  },
-  prClosed: {
-    channel: process.env.PR_CLOSED_CHANNEL ?? "main_chat",
-    format: process.env.PR_CLOSED_FORMAT ?? "markdown_summary",
   },
   // If set, pull request notifications go to this chat (e.g. your personal DM)
   // instead of the group.

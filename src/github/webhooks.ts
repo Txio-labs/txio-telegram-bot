@@ -1,5 +1,5 @@
 import { Webhooks } from "@octokit/webhooks";
-import { config, resolveDestination } from "../config.js";
+import { config, resolveDestination, getDeliveryConfig, EventCategory } from "../config.js";
 import { sendMessage } from "../telegram/client.js";
 import {
   formatDeploymentStatusEvent,
@@ -9,6 +9,32 @@ import {
   formatPullRequestOpenedEvent,
   formatWorkflowRunEvent,
 } from "./formatters.js";
+
+async function dispatchNotification(
+  eventName: string,
+  repoFullName: string | undefined,
+  eventCategory: EventCategory,
+  formatterResult: { text: string; parseMode?: "HTML"; replyMarkup?: any } | null
+) {
+  if (!formatterResult) return;
+  const { channel } = getDeliveryConfig(eventName);
+  const { text, parseMode, replyMarkup } = formatterResult;
+
+  let targetChatId: string | number = config.telegramChatId;
+  let threadId: number | undefined;
+
+  if (channel === "topic_thread") {
+    const dest = resolveDestination(repoFullName, eventCategory, config.telegramChatId, config.topicThreads[eventCategory]);
+    targetChatId = dest.chatId;
+    threadId = dest.threadId;
+  } else if (channel === "dm") {
+    if (config.pullRequestChatId) {
+      targetChatId = config.pullRequestChatId;
+    }
+  }
+
+  await sendMessage(targetChatId, text, threadId, { parseMode, replyMarkup });
+}
 
 export const webhooks = new Webhooks({ secret: config.githubWebhookSecret });
 
@@ -31,57 +57,38 @@ export function isDuplicateDelivery(id: string | undefined): boolean {
 
 webhooks.on(["issues.opened", "issues.closed", "issues.reopened"], async (event) => {
   if (isDuplicateDelivery(event.id)) return;
-  const { chatId, threadId } = resolveDestination(
+  const eventName = `issues.${event.payload.action}`;
+  const { format } = getDeliveryConfig(eventName);
+  await dispatchNotification(
+    eventName,
     event.payload.repository?.full_name,
     "issues",
-    config.telegramChatId,
-    config.topicThreads.issues,
+    formatIssueEvent(event, format)
   );
-  await sendMessage(chatId, formatIssueEvent(event), threadId);
 });
 
 webhooks.on(["pull_request.closed", "pull_request.reopened"], async (event) => {
   if (isDuplicateDelivery(event.id)) return;
-  const { channel, format } = config.prClosed;
-  const { text, parseMode, replyMarkup } = formatPullRequestClosedEvent(event, format);
-
-  const repoFullName = event.payload.repository?.full_name;
-  let targetChatId: string | number = config.telegramChatId;
-  let threadId: number | undefined;
-
-  if (channel === "topic_thread") {
-    const dest = resolveDestination(repoFullName, "pullRequests", config.telegramChatId, config.topicThreads.pullRequests);
-    targetChatId = dest.chatId;
-    threadId = dest.threadId;
-  } else if (channel === "dm") {
-    if (config.pullRequestChatId) {
-      targetChatId = config.pullRequestChatId;
-    }
-  }
-
-  await sendMessage(targetChatId, text, threadId, { parseMode, replyMarkup });
+  const eventName = `pull_request.${event.payload.action}`;
+  const { format } = getDeliveryConfig(eventName);
+  await dispatchNotification(
+    eventName,
+    event.payload.repository?.full_name,
+    "pullRequests",
+    formatPullRequestClosedEvent(event, format)
+  );
 });
 
 webhooks.on("pull_request.opened", async (event) => {
   if (isDuplicateDelivery(event.id)) return;
-  const { channel, format } = config.prOpened;
-  const { text, parseMode, replyMarkup } = formatPullRequestOpenedEvent(event, format);
-
-  const repoFullName = event.payload.repository?.full_name;
-  let targetChatId: string | number = config.telegramChatId;
-  let threadId: number | undefined;
-
-  if (channel === "topic_thread") {
-    const dest = resolveDestination(repoFullName, "pullRequests", config.telegramChatId, config.topicThreads.pullRequests);
-    targetChatId = dest.chatId;
-    threadId = dest.threadId;
-  } else if (channel === "dm") {
-    if (config.pullRequestChatId) {
-      targetChatId = config.pullRequestChatId;
-    }
-  }
-
-  await sendMessage(targetChatId, text, threadId, { parseMode, replyMarkup });
+  const eventName = "pull_request.opened";
+  const { format } = getDeliveryConfig(eventName);
+  await dispatchNotification(
+    eventName,
+    event.payload.repository?.full_name,
+    "pullRequests",
+    formatPullRequestOpenedEvent(event, format)
+  );
 });
 
 // GitHub computes `mergeable` asynchronously, so it's often null on the
@@ -110,39 +117,38 @@ webhooks.on(["pull_request.opened", "pull_request.synchronize", "pull_request.re
   if (isDuplicateDelivery(event.id)) return;
   const { pull_request: pr, repository } = event.payload;
   if (!(await isMergeConflicted(pr, repository))) return;
-  const message = formatMergeConflictEvent(pr, repository);
-  const { chatId } = resolveDestination(
+  const eventName = "pull_request.merge_conflict";
+  const { format } = getDeliveryConfig(eventName);
+  await dispatchNotification(
+    eventName,
     repository?.full_name,
     "pullRequests",
-    config.pullRequestChatId ?? config.telegramChatId,
-    undefined,
+    formatMergeConflictEvent(pr, repository, format)
   );
-  await sendMessage(chatId, message);
 });
 
 webhooks.on("workflow_run.completed", async (event) => {
   if (isDuplicateDelivery(event.id)) return;
-  const message = formatWorkflowRunEvent(event);
-  if (message) {
-    const { chatId, threadId } = resolveDestination(
-      event.payload.repository?.full_name,
-      "ci",
-      config.telegramChatId,
-      config.topicThreads.ci,
-    );
-    await sendMessage(chatId, message, threadId);
-  }
+  const eventName = "workflow_run.completed";
+  const { format } = getDeliveryConfig(eventName);
+  await dispatchNotification(
+    eventName,
+    event.payload.repository?.full_name,
+    "ci",
+    formatWorkflowRunEvent(event, format)
+  );
 });
 
 webhooks.on("deployment_status.created", async (event) => {
   if (isDuplicateDelivery(event.id)) return;
-  const { chatId, threadId } = resolveDestination(
+  const eventName = "deployment_status.created";
+  const { format } = getDeliveryConfig(eventName);
+  await dispatchNotification(
+    eventName,
     event.payload.repository?.full_name,
     "deploys",
-    config.telegramChatId,
-    config.topicThreads.deploys,
+    formatDeploymentStatusEvent(event, format)
   );
-  await sendMessage(chatId, formatDeploymentStatusEvent(event), threadId);
 });
 
 webhooks.onError((error) => {
