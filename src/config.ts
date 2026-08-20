@@ -35,14 +35,20 @@ export type EventCategory =
   | "branches"
   | "security";
 
+export type EventCategoryConfig = {
+  threadId?: number;
+  /** Optional label allowlist. When set, only events with at least one matching label are forwarded. Matching is case-sensitive. */
+  labels?: string[];
+};
+
 export type RepoRoute = {
   chatId?: string | number;
-  issues?: number;
-  pullRequests?: number;
-  ci?: number;
-  deploys?: number;
-  branches?: number;
-  security?: number;
+  issues?: number | EventCategoryConfig;
+  pullRequests?: number | EventCategoryConfig;
+  ci?: number | EventCategoryConfig;
+  deploys?: number | EventCategoryConfig;
+  branches?: number | EventCategoryConfig;
+  security?: number | EventCategoryConfig;
 };
 
 export type RepoRoutingConfig = Record<string, RepoRoute>;
@@ -50,7 +56,44 @@ export type RepoRoutingConfig = Record<string, RepoRoute>;
 export type Destination = {
   chatId: string | number;
   threadId: number | undefined;
+  /** Label allowlist for this destination, if configured. */
+  labels?: string[];
 };
+
+function validateEventCategoryValue(
+  configPath: string,
+  repo: string,
+  field: string,
+  value: unknown,
+): void {
+  if (value === undefined) return;
+  if (typeof value === "number") return; // legacy numeric threadId form
+
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    throw new Error(
+      `REPO_ROUTING_CONFIG_PATH "${configPath}": "${field}" in entry for "${repo}" must be a number or an object`,
+    );
+  }
+
+  const obj = value as Record<string, unknown>;
+  if ("threadId" in obj && typeof obj.threadId !== "number") {
+    throw new Error(
+      `REPO_ROUTING_CONFIG_PATH "${configPath}": "${field}.threadId" in entry for "${repo}" must be a number`,
+    );
+  }
+  if ("labels" in obj) {
+    const labels = obj.labels;
+    if (
+      !Array.isArray(labels) ||
+      labels.length === 0 ||
+      !labels.every((l) => typeof l === "string")
+    ) {
+      throw new Error(
+        `REPO_ROUTING_CONFIG_PATH "${configPath}": "${field}.labels" in entry for "${repo}" must be a non-empty array of strings`,
+      );
+    }
+  }
+}
 
 function loadRepoRoutingConfig(): RepoRoutingConfig {
   const configPath = process.env.REPO_ROUTING_CONFIG_PATH;
@@ -80,6 +123,8 @@ function loadRepoRoutingConfig(): RepoRoutingConfig {
     );
   }
 
+  const eventCategoryFields = ["issues", "pullRequests", "ci", "deploys", "branches", "security"] as const;
+
   for (const [repo, route] of Object.entries(parsed as Record<string, unknown>)) {
     if (typeof route !== "object" || route === null || Array.isArray(route)) {
       throw new Error(
@@ -93,6 +138,10 @@ function loadRepoRoutingConfig(): RepoRoutingConfig {
           `REPO_ROUTING_CONFIG_PATH "${configPath}": unknown key "${key}" in entry for "${repo}"`,
         );
       }
+    }
+    const routeObj = route as Record<string, unknown>;
+    for (const field of eventCategoryFields) {
+      validateEventCategoryValue(configPath, repo, field, routeObj[field]);
     }
   }
 
@@ -132,9 +181,40 @@ export function resolveDestination(
   }
 
   const chatId = route.chatId ?? fallbackChatId;
-  const threadId = eventCategory in route ? (route as Record<string, number | undefined>)[eventCategory] : fallbackThreadId;
+  const rawValue = eventCategory in route ? (route as Record<string, unknown>)[eventCategory] : undefined;
 
-  return { chatId, threadId };
+  let threadId: number | undefined;
+  let labels: string[] | undefined;
+
+  if (rawValue === undefined) {
+    threadId = fallbackThreadId;
+  } else if (typeof rawValue === "number") {
+    threadId = rawValue;
+  } else if (typeof rawValue === "object" && rawValue !== null) {
+    const catConfig = rawValue as EventCategoryConfig;
+    threadId = catConfig.threadId ?? fallbackThreadId;
+    labels = catConfig.labels;
+  } else {
+    threadId = fallbackThreadId;
+  }
+
+  return { chatId, threadId, ...(labels !== undefined ? { labels } : {}) };
+}
+
+/**
+ * Returns true if the event's payload labels contain at least one entry
+ * that matches the destination's allowlist (case-sensitive exact match).
+ *
+ * If the destination has no `labels` allowlist configured, always returns
+ * true (all events pass through). If the allowlist is set but the payload
+ * has zero labels, returns false.
+ */
+export function labelMatchesAllowlist(
+  payloadLabels: string[],
+  allowlist: string[] | undefined,
+): boolean {
+  if (!allowlist) return true;
+  return payloadLabels.some((label) => allowlist.includes(label));
 }
 
 export const config = {

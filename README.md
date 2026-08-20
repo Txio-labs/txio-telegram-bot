@@ -141,10 +141,54 @@ object with:
 - `chatId` (optional) — overrides `TELEGRAM_CHAT_ID` for that repo.
 - `issues` / `pullRequests` / `ci` / `deploys` / `branches` / `security`
   (optional) — overrides the corresponding `TOPIC_THREAD_*` for that event
-  type in that chat.
+  type in that chat. Each can be either a plain thread ID number (e.g.
+  `102`) or an object with `threadId` and an optional `labels` allowlist
+  (see below).
 
 Repos not present in the file, or event types left blank, fall back to the
 defaults (`TELEGRAM_CHAT_ID` and `TOPIC_THREAD_*` env vars).
+
+### Optional: label filtering per destination
+
+You can restrict which issues or pull requests trigger notifications by
+adding a `labels` allowlist to any event-category entry. Only events whose
+payload includes **at least one** label that exactly matches an entry in
+the allowlist will be forwarded. Matching is **case-sensitive**.
+
+```json
+{
+  "txio-labs/txio-backend": {
+    "chatId": "-1001234567890",
+    "issues": {
+      "threadId": 101,
+      "labels": ["urgent", "critical"]
+    },
+    "pullRequests": {
+      "threadId": 102,
+      "labels": ["urgent"]
+    },
+    "ci": 103,
+    "deploys": 104
+  }
+}
+```
+
+In this example, only issues labelled `urgent` or `critical` will post to
+thread 101, and only pull requests labelled `urgent` will post to thread
+102. CI and deployment events are unaffected — they always pass through
+regardless of any `labels` key on those entries.
+
+**Edge cases:**
+
+- An issue or pull request with **zero labels** when an allowlist is
+  configured will **not** be forwarded to that destination.
+- Label matching is exact and case-sensitive: `"Urgent"` does not match
+  `"urgent"`.
+- Events that carry no labels field in their payload — specifically CI
+  (`workflow_run.completed`) and deployment (`deployment_status.created`)
+  events — always pass through and are never filtered by a `labels` key.
+- Suppressed events are logged at `debug` level so you can diagnose
+  misconfigured allowlists.
 
 ## Run
 

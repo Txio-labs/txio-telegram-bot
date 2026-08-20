@@ -25,5 +25,18 @@
     "deploys": 109,
     "branches": 111,
     "security": 113
+  },
+  "txio-labs/txio-urgent-only": {
+    "chatId": "-1001234567890",
+    "issues": {
+      "threadId": 201,
+      "labels": ["urgent", "critical"]
+    },
+    "pullRequests": {
+      "threadId": 202,
+      "labels": ["urgent"]
+    },
+    "ci": 203,
+    "deploys": 204
   }
 }

@@ -9,7 +9,7 @@ vi.hoisted(() => {
   process.env.PUBLIC_URL = "https://example.com";
 });
 
-import { resolveDestination } from "./config.js";
+import { resolveDestination, labelMatchesAllowlist } from "./config.js";
 import type { RepoRoutingConfig } from "./config.js";
 
 const FALLBACK_CHAT = "-1000000";
@@ -94,5 +94,72 @@ describe("resolveDestination", () => {
     };
     const result = resolveDestination("txio-labs/txio-backend", "security", FALLBACK_CHAT, FALLBACK_THREAD, routing);
     expect(result).toEqual({ chatId: "-100999", threadId: 555 });
+  });
+
+  it("returns labels from EventCategoryConfig object form", () => {
+    const routing: RepoRoutingConfig = {
+      "txio-labs/txio-backend": {
+        chatId: "-100999",
+        issues: { threadId: 101, labels: ["urgent", "critical"] },
+      },
+    };
+    const result = resolveDestination("txio-labs/txio-backend", "issues", FALLBACK_CHAT, FALLBACK_THREAD, routing);
+    expect(result).toEqual({ chatId: "-100999", threadId: 101, labels: ["urgent", "critical"] });
+  });
+
+  it("returns undefined labels when event category is a plain number", () => {
+    const routing: RepoRoutingConfig = {
+      "txio-labs/txio-backend": {
+        chatId: "-100999",
+        issues: 101,
+      },
+    };
+    const result = resolveDestination("txio-labs/txio-backend", "issues", FALLBACK_CHAT, FALLBACK_THREAD, routing);
+    expect(result.labels).toBeUndefined();
+  });
+
+  it("uses fallback threadId when EventCategoryConfig has no threadId", () => {
+    const routing: RepoRoutingConfig = {
+      "txio-labs/txio-backend": {
+        chatId: "-100999",
+        issues: { labels: ["urgent"] },
+      },
+    };
+    const result = resolveDestination("txio-labs/txio-backend", "issues", FALLBACK_CHAT, FALLBACK_THREAD, routing);
+    expect(result).toEqual({ chatId: "-100999", threadId: FALLBACK_THREAD, labels: ["urgent"] });
+  });
+});
+
+describe("labelMatchesAllowlist", () => {
+  it("returns true when allowlist is undefined (no filter configured)", () => {
+    expect(labelMatchesAllowlist(["bug", "urgent"], undefined)).toBe(true);
+  });
+
+  it("returns true when allowlist is undefined and payload is empty", () => {
+    expect(labelMatchesAllowlist([], undefined)).toBe(true);
+  });
+
+  it("returns true when payload contains a label that matches the allowlist", () => {
+    expect(labelMatchesAllowlist(["bug", "urgent"], ["urgent", "critical"])).toBe(true);
+  });
+
+  it("returns true when payload contains multiple matching labels", () => {
+    expect(labelMatchesAllowlist(["urgent", "critical"], ["urgent", "critical"])).toBe(true);
+  });
+
+  it("returns false when no payload label matches the allowlist", () => {
+    expect(labelMatchesAllowlist(["bug", "documentation"], ["urgent", "critical"])).toBe(false);
+  });
+
+  it("returns false when payload is empty and allowlist is set", () => {
+    expect(labelMatchesAllowlist([], ["urgent"])).toBe(false);
+  });
+
+  it("is case-sensitive: 'Urgent' does not match 'urgent'", () => {
+    expect(labelMatchesAllowlist(["Urgent"], ["urgent"])).toBe(false);
+  });
+
+  it("is case-sensitive: exact match passes", () => {
+    expect(labelMatchesAllowlist(["urgent"], ["urgent"])).toBe(true);
   });
 });
