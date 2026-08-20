@@ -5,9 +5,10 @@
 Ops bot for the Txio team.
 
 - Listens for GitHub webhook events (issues, pull requests, CI runs,
-  deployments) and posts a formatted notification into the Telegram group.
-  Each event type can optionally be routed to its own forum topic, and pull
-  requests can be routed to a private DM instead of the group.
+  deployments, Dependabot security alerts) and posts a formatted notification
+  into the Telegram group. Each event type can optionally be routed to its own
+  forum topic, and pull requests / security alerts can be routed to a private
+  DM instead of the group.
 - Welcomes new members when they join the group.
 
 ## Setup
@@ -27,7 +28,7 @@ Ops bot for the Txio team.
    content type `application/json` (GitHub defaults to
    `application/x-www-form-urlencoded` — you must change this), and a
    secret matching `GITHUB_WEBHOOK_SECRET`. Subscribe to: Issues, Pull
-   requests, Workflow runs, Deployment statuses.
+   requests, Workflow runs, Deployment statuses, Dependabot alerts.
 6. **(Optional) Set GITHUB_TOKEN**: for merge-conflict detection on private
    repos and to avoid rate limits on public repos, create a fine-grained
    personal access token (PAT) or GitHub App installation token with
@@ -43,12 +44,28 @@ routing to work.
 
 - **Topic ids**: open the topic, send a message, then check
   `getUpdates` for `"message_thread_id"` in that update. Set
-  `TOPIC_THREAD_ISSUES` / `TOPIC_THREAD_CI` / `TOPIC_THREAD_DEPLOYS`.
-  Unset ones fall back to the group's General topic.
+  `TOPIC_THREAD_ISSUES` / `TOPIC_THREAD_CI` / `TOPIC_THREAD_DEPLOYS` /
+  `TOPIC_THREAD_SECURITY`. Unset ones fall back to the group's General topic.
 - **PR private DM**: DM the bot directly, send it any message, then check
   `getUpdates` for that message's `"chat":{"id": ...}` (your personal chat
   id, a positive number). Set `PULL_REQUEST_CHAT_ID` — pull request
   notifications go there instead of the group.
+- **Security alert private DM**: as above, set `SECURITY_ALERT_CHAT_ID` —
+  security alert notifications go there instead of the group.
+
+### Optional: security alert delivery
+
+Security alert ("Dependabot alert raised") notifications are configurable
+the same way as pull request notifications:
+
+- `SECURITY_ALERT_CHANNEL` — `main_chat` (default) | `topic_thread` | `dm`
+- `SECURITY_ALERT_FORMAT` — `markdown_summary` (default) | `plain_text` |
+  `inline_buttons`
+
+The supported combinations are `main_chat + markdown_summary` (default),
+`topic_thread + markdown_summary`, and `dm + plain_text`. With no variables
+set, security alerts post to the group's General topic with a linked
+summary, matching the bot's other notifications.
 
 ### Optional: multi-repo routing
 
@@ -64,7 +81,8 @@ notifications to a distinct chat or forum topic. Create a JSON file
     "issues": 101,
     "pullRequests": 102,
     "ci": 103,
-    "deploys": 104
+    "deploys": 104,
+    "security": 110
   },
   "txio-labs/txio-cli": {
     "chatId": "-1001234567890",
@@ -77,8 +95,9 @@ Each key is a `repository.full_name` (case-insensitive). The value is an
 object with:
 
 - `chatId` (optional) — overrides `TELEGRAM_CHAT_ID` for that repo.
-- `issues` / `pullRequests` / `ci` / `deploys` (optional) — overrides
-  the corresponding `TOPIC_THREAD_*` for that event type in that chat.
+- `issues` / `pullRequests` / `ci` / `deploys` / `security` (optional) —
+  overrides the corresponding `TOPIC_THREAD_*` for that event type in that
+  chat.
 
 Repos not present in the file, or event types left blank, fall back to the
 defaults (`TELEGRAM_CHAT_ID` and `TOPIC_THREAD_*` env vars).

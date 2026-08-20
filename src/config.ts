@@ -20,7 +20,7 @@ function optionalString(name: string): string | undefined {
 
 // ── Repo routing ──────────────────────────────────────────────────────
 
-export type EventCategory = "issues" | "pullRequests" | "ci" | "deploys";
+export type EventCategory = "issues" | "pullRequests" | "ci" | "deploys" | "security";
 
 export type RepoRoute = {
   chatId?: string | number;
@@ -28,6 +28,7 @@ export type RepoRoute = {
   pullRequests?: number;
   ci?: number;
   deploys?: number;
+  security?: number;
 };
 
 export type RepoRoutingConfig = Record<string, RepoRoute>;
@@ -72,7 +73,7 @@ function loadRepoRoutingConfig(): RepoRoutingConfig {
       );
     }
     for (const key of Object.keys(route as Record<string, unknown>)) {
-      const allowed = ["chatId", "issues", "pullRequests", "ci", "deploys"];
+      const allowed = ["chatId", "issues", "pullRequests", "ci", "deploys", "security"];
       if (!allowed.includes(key)) {
         throw new Error(
           `REPO_ROUTING_CONFIG_PATH "${configPath}": unknown key "${key}" in entry for "${repo}"`,
@@ -126,6 +127,7 @@ export const config = {
     pullRequests: optionalInt("TOPIC_THREAD_PULL_REQUESTS"),
     ci: optionalInt("TOPIC_THREAD_CI"),
     deploys: optionalInt("TOPIC_THREAD_DEPLOYS"),
+    security: optionalInt("TOPIC_THREAD_SECURITY"),
   },
   prOpened: {
     channel: process.env.PR_OPENED_CHANNEL ?? "main_chat",
@@ -135,6 +137,13 @@ export const config = {
     channel: process.env.PR_CLOSED_CHANNEL ?? "main_chat",
     format: process.env.PR_CLOSED_FORMAT ?? "markdown_summary",
   },
+  securityAlert: {
+    channel: process.env.SECURITY_ALERT_CHANNEL ?? "main_chat",
+    format: process.env.SECURITY_ALERT_FORMAT ?? "markdown_summary",
+  },
+  // If set, security alert notifications go to this chat (e.g. your personal DM)
+  // instead of the group.
+  securityAlertChatId: process.env.SECURITY_ALERT_CHAT_ID || undefined,
   // If set, pull request notifications go to this chat (e.g. your personal DM)
   // instead of the group.
   pullRequestChatId: process.env.PULL_REQUEST_CHAT_ID || undefined,
