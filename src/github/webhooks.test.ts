@@ -14,14 +14,16 @@ import { config } from "../config.js";
 const mockFetch = vi.fn();
 global.fetch = mockFetch;
 
-// Mock sendMessage from telegram client
-const mockSendMessage = vi.fn().mockResolvedValue(undefined);
-
-// Mock resolveDestination
-const mockResolveDestination = vi.fn().mockReturnValue({
-  chatId: "-1000000",
-  threadId: undefined,
-});
+// Mock sendMessage from telegram client and resolveDestination from config.
+// These must be created via vi.hoisted() because vi.mock() factories below
+// are hoisted above regular top-level const declarations.
+const { mockSendMessage, mockResolveDestination } = vi.hoisted(() => ({
+  mockSendMessage: vi.fn().mockResolvedValue(undefined),
+  mockResolveDestination: vi.fn().mockReturnValue({
+    chatId: "-1000000",
+    threadId: undefined,
+  }),
+}));
 
 vi.mock("../config.js", () => ({
   config: {
