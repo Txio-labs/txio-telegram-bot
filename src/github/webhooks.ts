@@ -1,6 +1,7 @@
 import { Webhooks } from "@octokit/webhooks";
 import { config, resolveDestination, labelMatchesAllowlist } from "../config.js";
-import { sendMessage } from "../telegram/client.js";
+import { prChangesRequestedNotifier } from "../notifications/prChangesRequested.js";
+import { notifyChannel, sendMessage } from "../telegram/client.js";
 import {
   formatBranchCreatedEvent,
   formatBranchDeletedEvent,
@@ -252,6 +253,16 @@ webhooks.on("issue_comment.created", async (event) => {
     isPr ? config.topicThreads.pullRequests : config.topicThreads.issues,
   );
   await sendMessage(chatId, formatCommentEvent(event), threadId);
+});
+
+webhooks.on("pull_request_review.submitted", async (event) => {
+  if (isDuplicateDelivery(event.id)) return;
+  if (event.payload.review.state !== "changes_requested") return;
+  
+  await prChangesRequestedNotifier.dispatch(event.payload, {
+    threadId: config.topicThreads.pullRequests,
+    dmChatId: config.pullRequestChatId
+  });
 });
 
 webhooks.on("workflow_run.completed", async (event) => {

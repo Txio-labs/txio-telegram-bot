@@ -1,5 +1,6 @@
 import "dotenv/config";
 import { readFileSync } from "node:fs";
+import type { DeliveryChannel, DeliveryFormat, EventDeliveryConfig } from "./notifications/types.js";
 
 function required(name: string): string {
   const value = process.env[name];
@@ -244,6 +245,10 @@ export const config = {
     channel: process.env.PR_CLOSED_CHANNEL ?? "main_chat",
     format: process.env.PR_CLOSED_FORMAT ?? "markdown_summary",
   },
+  prChangesRequested: {
+    channel: (process.env.PR_CHANGES_REQUESTED_CHANNEL as DeliveryChannel) ?? "main_chat",
+    format: (process.env.PR_CHANGES_REQUESTED_FORMAT as DeliveryFormat) ?? "markdown_summary",
+  } as EventDeliveryConfig,
   securityAlert: {
     channel: process.env.SECURITY_ALERT_CHANNEL ?? "main_chat",
     format: process.env.SECURITY_ALERT_FORMAT ?? "markdown_summary",
