@@ -5,7 +5,8 @@
 Ops bot for the Txio team.
 
 - Listens for GitHub webhook events (issues, pull requests, CI runs,
-  deployments) and posts a formatted notification into the Telegram group.
+  deployments, branch create/delete, force-pushes to the default branch)
+  and posts a formatted notification into the Telegram group.
   Each event type can optionally be routed to its own forum topic, and pull
   requests can be routed to a private DM instead of the group.
 - Welcomes new members when they join the group.
@@ -26,8 +27,8 @@ Ops bot for the Txio team.
    Webhooks, add a webhook pointing at `<PUBLIC_URL>/webhooks/github`,
    content type `application/json` (GitHub defaults to
    `application/x-www-form-urlencoded` — you must change this), and a
-   secret matching `GITHUB_WEBHOOK_SECRET`. Subscribe to: Issues, Pull
-   requests, Workflow runs, Deployment statuses.
+   secret matching `GITHUB_WEBHOOK_SECRET`. Subscribe to: Issues, Issue
+   comments, Pull requests, Workflow runs, Deployment statuses, Branches.
 6. **(Optional) Set GITHUB_TOKEN**: for merge-conflict detection on private
    repos and to avoid rate limits on public repos, create a fine-grained
    personal access token (PAT) or GitHub App installation token with
@@ -43,7 +44,8 @@ routing to work.
 
 - **Topic ids**: open the topic, send a message, then check
   `getUpdates` for `"message_thread_id"` in that update. Set
-  `TOPIC_THREAD_ISSUES` / `TOPIC_THREAD_CI` / `TOPIC_THREAD_DEPLOYS`.
+  `TOPIC_THREAD_ISSUES` / `TOPIC_THREAD_CI` / `TOPIC_THREAD_DEPLOYS` /
+  `TOPIC_THREAD_BRANCHES`.
   Unset ones fall back to the group's General topic.
 - **PR private DM**: DM the bot directly, send it any message, then check
   `getUpdates` for that message's `"chat":{"id": ...}` (your personal chat
@@ -64,7 +66,8 @@ notifications to a distinct chat or forum topic. Create a JSON file
     "issues": 101,
     "pullRequests": 102,
     "ci": 103,
-    "deploys": 104
+    "deploys": 104,
+    "branches": 110
   },
   "txio-labs/txio-cli": {
     "chatId": "-1001234567890",
@@ -77,8 +80,9 @@ Each key is a `repository.full_name` (case-insensitive). The value is an
 object with:
 
 - `chatId` (optional) — overrides `TELEGRAM_CHAT_ID` for that repo.
-- `issues` / `pullRequests` / `ci` / `deploys` (optional) — overrides
-  the corresponding `TOPIC_THREAD_*` for that event type in that chat.
+- `issues` / `pullRequests` / `ci` / `deploys` / `branches` (optional) —
+  overrides the corresponding `TOPIC_THREAD_*` for that event type in
+  that chat.
 
 Repos not present in the file, or event types left blank, fall back to the
 defaults (`TELEGRAM_CHAT_ID` and `TOPIC_THREAD_*` env vars).

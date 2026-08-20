@@ -78,6 +78,29 @@ export function formatMergeConflictEvent(
   );
 }
 
+export const COMMENT_PREVIEW_LENGTH = 200;
+
+export function truncateCommentBody(body: string): string {
+  const normalized = body.replace(/\s+/g, " ").trim();
+  return normalized.length > COMMENT_PREVIEW_LENGTH
+    ? `${normalized.slice(0, COMMENT_PREVIEW_LENGTH)}…`
+    : normalized;
+}
+
+export function formatCommentEvent({
+  payload,
+}: EmitterWebhookEvent<"issue_comment">): string {
+  const { issue, comment, repository } = payload;
+  const isPr = Boolean(issue.pull_request);
+  const icon = isPr ? "💬" : "🗨️";
+  const subject = isPr ? "Pull request" : "Issue";
+  return (
+    `${icon} Comment on ${subject} in ${link(repository.html_url, repository.full_name)}\n` +
+    `${link(issue.html_url, `#${issue.number} ${issue.title}`)}\n` +
+    `${escapeHtml(comment.user?.login ?? "unknown")}: ${escapeHtml(truncateCommentBody(comment.body ?? ""))}`
+  );
+}
+
 export function formatWorkflowRunEvent({
   payload,
 }: EmitterWebhookEvent<"workflow_run">): string | null {
@@ -100,5 +123,37 @@ export function formatDeploymentStatusEvent({
       repository.html_url,
       repository.full_name,
     )})\n` + (status.log_url ? link(status.log_url, "logs") : "")
+  );
+}
+
+export function formatBranchCreatedEvent({
+  payload,
+}: EmitterWebhookEvent<"create">): string {
+  const { ref, repository, sender } = payload;
+  return (
+    `🌿 Branch created in ${link(repository.html_url, repository.full_name)}\n` +
+    `${escapeHtml(ref)} by ${escapeHtml(sender?.login ?? "unknown")}`
+  );
+}
+
+export function formatBranchDeletedEvent({
+  payload,
+}: EmitterWebhookEvent<"delete">): string {
+  const { ref, repository, sender } = payload;
+  return (
+    `🗑️ Branch deleted in ${link(repository.html_url, repository.full_name)}\n` +
+    `${escapeHtml(ref)} by ${escapeHtml(sender?.login ?? "unknown")}`
+  );
+}
+
+export function formatForcePushEvent({
+  payload,
+}: EmitterWebhookEvent<"push">): string {
+  const { ref, repository, sender, compare } = payload;
+  const branch = ref.replace(/^refs\/heads\//, "");
+  return (
+    `⚠️ Force push to ${escapeHtml(branch)} in ${link(repository.html_url, repository.full_name)}\n` +
+    `${link(compare, "view changes")}\n` +
+    `by ${escapeHtml(sender?.login ?? "unknown")}`
   );
 }

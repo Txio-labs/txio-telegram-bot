@@ -20,7 +20,7 @@ function optionalString(name: string): string | undefined {
 
 // ── Repo routing ──────────────────────────────────────────────────────
 
-export type EventCategory = "issues" | "pullRequests" | "ci" | "deploys";
+export type EventCategory = "issues" | "pullRequests" | "ci" | "deploys" | "branches";
 
 export type RepoRoute = {
   chatId?: string | number;
@@ -28,6 +28,7 @@ export type RepoRoute = {
   pullRequests?: number;
   ci?: number;
   deploys?: number;
+  branches?: number;
 };
 
 export type RepoRoutingConfig = Record<string, RepoRoute>;
@@ -72,7 +73,7 @@ function loadRepoRoutingConfig(): RepoRoutingConfig {
       );
     }
     for (const key of Object.keys(route as Record<string, unknown>)) {
-      const allowed = ["chatId", "issues", "pullRequests", "ci", "deploys"];
+      const allowed = ["chatId", "issues", "pullRequests", "ci", "deploys", "branches"];
       if (!allowed.includes(key)) {
         throw new Error(
           `REPO_ROUTING_CONFIG_PATH "${configPath}": unknown key "${key}" in entry for "${repo}"`,
@@ -126,6 +127,7 @@ export const config = {
     pullRequests: optionalInt("TOPIC_THREAD_PULL_REQUESTS"),
     ci: optionalInt("TOPIC_THREAD_CI"),
     deploys: optionalInt("TOPIC_THREAD_DEPLOYS"),
+    branches: optionalInt("TOPIC_THREAD_BRANCHES"),
   },
   prOpened: {
     channel: process.env.PR_OPENED_CHANNEL ?? "main_chat",
