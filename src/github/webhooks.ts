@@ -3,6 +3,7 @@ import { config, resolveDestination } from "../config.js";
 import { sendMessage } from "../telegram/client.js";
 import {
   formatDeploymentStatusEvent,
+  formatDependencyUpdateEvent,
   formatIssueEvent,
   formatMergeConflictEvent,
   formatPullRequestClosedEvent,
@@ -65,7 +66,11 @@ webhooks.on(["pull_request.closed", "pull_request.reopened"], async (event) => {
 webhooks.on("pull_request.opened", async (event) => {
   if (isDuplicateDelivery(event.id)) return;
   const { channel, format } = config.prOpened;
-  const { text, parseMode, replyMarkup } = formatPullRequestOpenedEvent(event, format);
+  const labels = event.payload.pull_request?.labels ?? [];
+  const hasDependenciesLabel = labels.some((label: any) => label.name === "dependencies");
+  const { text, parseMode, replyMarkup } = hasDependenciesLabel
+    ? formatDependencyUpdateEvent(event, format)
+    : formatPullRequestOpenedEvent(event, format);
 
   const repoFullName = event.payload.repository?.full_name;
   let targetChatId: string | number = config.telegramChatId;

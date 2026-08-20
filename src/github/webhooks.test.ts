@@ -1,12 +1,28 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { isMergeConflicted } from "./webhooks.js";
+import {
+  isMergeConflicted,
+  seenDeliveries,
+  webhooks,
+} from "./webhooks.js";
+import {
+  formatDependencyUpdateEvent,
+  formatPullRequestOpenedEvent,
+} from "./formatters.js";
 import { config } from "../config.js";
 
 // Mock global fetch
 const mockFetch = vi.fn();
 global.fetch = mockFetch;
 
-// Mock the config module
+// Mock sendMessage from telegram client
+const mockSendMessage = vi.fn().mockResolvedValue(undefined);
+
+// Mock resolveDestination
+const mockResolveDestination = vi.fn().mockReturnValue({
+  chatId: "-1000000",
+  threadId: undefined,
+});
+
 vi.mock("../config.js", () => ({
   config: {
     telegramBotToken: "fake:token",
@@ -15,9 +31,25 @@ vi.mock("../config.js", () => ({
     githubWebhookSecret: "fake:secret",
     prOpened: {
       channel: "main_chat",
-      format: "markdown_summary"
+      format: "markdown_summary",
+    },
+    prClosed: {
+      channel: "main_chat",
+      format: "markdown_summary",
+    },
+    pullRequestChatId: undefined,
+    topicThreads: {
+      issues: undefined,
+      pullRequests: undefined,
+      ci: undefined,
+      deploys: undefined,
     },
   },
+  resolveDestination: mockResolveDestination,
+}));
+
+vi.mock("../telegram/client.js", () => ({
+  sendMessage: mockSendMessage,
 }));
 
 describe("isMergeConflicted", () => {
@@ -173,5 +205,194 @@ describe("isMergeConflicted", () => {
 
     expect(result).toBe(false);
     expect(mockFetch).not.toHaveBeenCalled();
+  });
+});
+
+describe("formatDependencyUpdateEvent", () => {
+  const baseEvent = {
+    id: "test-event",
+    payload: {
+      action: "opened" as const,
+      repository: {
+        full_name: "txio-labs/txio",
+        html_url: "https://github.com/txio-labs/txio",
+      },
+      pull_request: {
+        number: 42,
+        title: "Bump actions/checkout from v3 to v4",
+        html_url: "https://github.com/txio-labs/txio/pull/42",
+        user: { login: "dependabot[bot]" },
+      },
+    },
+  };
+
+  it("should return plain text without parse mode", () => {
+    const result = formatDependencyUpdateEvent(baseEvent as any, "plain_text");
+    expect(result.text).toBe(
+      "📦 Dependency update in txio-labs/txio\n#42 Bump actions/checkout from v3 to v4\nby dependabot[bot]"
+    );
+    expect(result.parseMode).toBeUndefined();
+    expect(result.replyMarkup).toBeUndefined();
+  });
+
+  it("should return HTML with links for markdown_summary format", () => {
+    const result = formatDependencyUpdateEvent(baseEvent as any, "markdown_summary");
+    expect(result.text).toBe(
+      '📦 Dependency update in <a href="https://github.com/txio-labs/txio">txio-labs/txio</a>\n' +
+        '<a href="https://github.com/txio-labs/txio/pull/42">#42 Bump actions/checkout from v3 to v4</a>\n' +
+        "by dependabot[bot]"
+    );
+    expect(result.parseMode).toBe("HTML");
+    expect(result.replyMarkup).toBeUndefined();
+  });
+
+  it("should return HTML with links for default format", () => {
+    const result = formatDependencyUpdateEvent(baseEvent as any, "default");
+    expect(result.text).toBe(
+      '📦 Dependency update in <a href="https://github.com/txio-labs/txio">txio-labs/txio</a>\n' +
+        '<a href="https://github.com/txio-labs/txio/pull/42">#42 Bump actions/checkout from v3 to v4</a>\n' +
+        "by dependabot[bot]"
+    );
+    expect(result.parseMode).toBe("HTML");
+  });
+
+  it("should escape the user login in HTML format", () => {
+    const event = {
+      ...baseEvent,
+      payload: {
+        ...baseEvent.payload,
+        pull_request: {
+          ...baseEvent.payload.pull_request,
+          user: { login: "<script>alert('xss')</script>" },
+        },
+      },
+    };
+    const result = formatDependencyUpdateEvent(event as any, "markdown_summary");
+    expect(result.text).toContain("&lt;script&gt;alert(&#x27;xss&#x27;)&lt;/script&gt;");
+  });
+});
+
+describe("formatPullRequestOpenedEvent", () => {
+  const baseEvent = {
+    id: "test-event",
+    payload: {
+      action: "opened" as const,
+      repository: {
+        full_name: "txio-labs/txio",
+        html_url: "https://github.com/txio-labs/txio",
+      },
+      pull_request: {
+        number: 42,
+        title: "Add new feature",
+        html_url: "https://github.com/txio-labs/txio/pull/42",
+        user: { login: "human-dev" },
+      },
+    },
+  };
+
+  it("should return standard format for regular PRs", () => {
+    const result = formatPullRequestOpenedEvent(baseEvent as any, "markdown_summary");
+    expect(result.text).toBe(
+      '🆕 Pull request opened in <a href="https://github.com/txio-labs/txio">txio-labs/txio</a>\n' +
+        '<a href="https://github.com/txio-labs/txio/pull/42">#42 Add new feature</a>\n' +
+        "by human-dev"
+    );
+    expect(result.parseMode).toBe("HTML");
+  });
+});
+
+describe("pull_request.opened webhook branching", () => {
+  beforeEach(() => {
+    seenDeliveries.clear();
+    mockSendMessage.mockClear();
+    mockResolveDestination.mockClear();
+  });
+
+  it("should use dependency formatter when PR has dependencies label", async () => {
+    await webhooks.receive({
+      id: "test-deps-1",
+      name: "pull_request",
+      payload: {
+        action: "opened",
+        repository: {
+          full_name: "txio-labs/txio",
+          html_url: "https://github.com/txio-labs/txio",
+        },
+        pull_request: {
+          number: 123,
+          title: "Bump dependencies",
+          html_url: "https://github.com/txio-labs/txio/pull/123",
+          user: { login: "dependabot[bot]" },
+          labels: [{ name: "dependencies" }],
+        },
+      },
+    });
+
+    expect(mockSendMessage).toHaveBeenCalledWith(
+      "-1000000",
+      expect.stringContaining("📦 Dependency update"),
+      undefined,
+      expect.objectContaining({ parseMode: "HTML" })
+    );
+  });
+
+  it("should use standard formatter when PR has no dependencies label", async () => {
+    await webhooks.receive({
+      id: "test-normal-1",
+      name: "pull_request",
+      payload: {
+        action: "opened",
+        repository: {
+          full_name: "txio-labs/txio",
+          html_url: "https://github.com/txio-labs/txio",
+        },
+        pull_request: {
+          number: 124,
+          title: "Add new feature",
+          html_url: "https://github.com/txio-labs/txio/pull/124",
+          user: { login: "human-dev" },
+          labels: [],
+        },
+      },
+    });
+
+    expect(mockSendMessage).toHaveBeenCalledWith(
+      "-1000000",
+      expect.stringContaining("🆕 Pull request opened"),
+      undefined,
+      expect.objectContaining({ parseMode: "HTML" })
+    );
+  });
+
+  it("should treat PRs with dependencies label alongside other labels as dependency updates", async () => {
+    await webhooks.receive({
+      id: "test-deps-multi-1",
+      name: "pull_request",
+      payload: {
+        action: "opened",
+        repository: {
+          full_name: "txio-labs/txio",
+          html_url: "https://github.com/txio-labs/txio",
+        },
+        pull_request: {
+          number: 125,
+          title: "Bump rust dependencies",
+          html_url: "https://github.com/txio-labs/txio/pull/125",
+          user: { login: "dependabot[bot]" },
+          labels: [
+            { name: "dependencies" },
+            { name: "rust" },
+            { name: "ci" },
+          ],
+        },
+      },
+    });
+
+    expect(mockSendMessage).toHaveBeenCalledWith(
+      "-1000000",
+      expect.stringContaining("📦 Dependency update"),
+      undefined,
+      expect.objectContaining({ parseMode: "HTML" })
+    );
   });
 });
