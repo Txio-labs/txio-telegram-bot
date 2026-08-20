@@ -84,4 +84,15 @@ describe("resolveDestination", () => {
     const result = resolveDestination("txio-labs/txio-telegram-bot", "pullRequests", FALLBACK_CHAT, FALLBACK_THREAD, routing);
     expect(result).toEqual({ chatId: -100666, threadId: 30 });
   });
+
+  it("routes security alerts via event-specific threadId", () => {
+    const routing: RepoRoutingConfig = {
+      "txio-labs/txio-backend": {
+        chatId: "-100999",
+        security: 555,
+      },
+    };
+    const result = resolveDestination("txio-labs/txio-backend", "security", FALLBACK_CHAT, FALLBACK_THREAD, routing);
+    expect(result).toEqual({ chatId: "-100999", threadId: 555 });
+  });
 });
