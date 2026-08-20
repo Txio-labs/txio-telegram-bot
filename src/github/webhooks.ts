@@ -7,6 +7,7 @@ import {
   formatMergeConflictEvent,
   formatPullRequestClosedEvent,
   formatPullRequestOpenedEvent,
+  formatSecurityAlertEvent,
   formatWorkflowRunEvent,
 } from "./formatters.js";
 
@@ -194,6 +195,28 @@ webhooks.on("deployment_status.created", async (event) => {
   );
 
   await sendMessage(chatId, formatDeploymentStatusEvent(event), threadId);
+});
+
+webhooks.on("dependabot_alert.created", async (event) => {
+  if (isDuplicateDelivery(event.id)) return;
+  const { channel, format } = config.securityAlert;
+  const { text, parseMode, replyMarkup } = formatSecurityAlertEvent(event, format);
+
+  const repoFullName = event.payload.repository?.full_name;
+  let targetChatId: string | number = config.telegramChatId;
+  let threadId: number | undefined;
+
+  if (channel === "topic_thread") {
+    const dest = resolveDestination(repoFullName, "security", config.telegramChatId, config.topicThreads.security);
+    targetChatId = dest.chatId;
+    threadId = dest.threadId;
+  } else if (channel === "dm") {
+    if (config.securityAlertChatId) {
+      targetChatId = config.securityAlertChatId;
+    }
+  }
+
+  await sendMessage(targetChatId, text, threadId, { parseMode, replyMarkup });
 });
 
 webhooks.onError((error) => {

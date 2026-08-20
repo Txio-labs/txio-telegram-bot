@@ -68,6 +68,51 @@ export function formatPullRequestOpenedEvent(
   return { text: htmlText, parseMode: "HTML" };
 }
 
+export function formatSecurityAlertEvent(
+  event: EmitterWebhookEvent<"dependabot_alert">,
+  format: string,
+): { text: string; parseMode?: "HTML"; replyMarkup?: unknown } {
+  const { alert, repository } = event.payload;
+
+  const pkg = alert.security_vulnerability?.package ?? alert.dependency?.package;
+  const packageName = pkg?.name ?? "unknown";
+  const ecosystem = pkg?.ecosystem ?? "unknown";
+  const severity = alert.security_advisory?.severity ?? alert.security_vulnerability?.severity ?? "unknown";
+  const ghsaId = alert.security_advisory?.ghsa_id;
+  const cveId = alert.security_advisory?.cve_id;
+  const summary = alert.security_advisory?.summary;
+  const vulnerableRange = alert.security_vulnerability?.vulnerable_version_range;
+  const patchedVersion = alert.security_vulnerability?.first_patched_version?.identifier;
+  const alertTitle = `#${alert.number} ${summary ?? ghsaId ?? "vulnerable dependency"}`;
+  const idLine = ghsaId && cveId ? `${ghsaId} · ${cveId}` : ghsaId ?? cveId ?? "";
+
+  if (format === "plain_text") {
+    const text =
+      `🔒 Security alert in ${repository.full_name}\n` +
+      `${alertTitle}\n` +
+      `Severity: ${severity} · Dependency: ${packageName} (${ecosystem})\n` +
+      (vulnerableRange ? `Vulnerable range: ${vulnerableRange}\n` : "") +
+      (patchedVersion ? `Patched in: ${patchedVersion}\n` : "") +
+      `${alert.html_url}`;
+    return { text, parseMode: undefined };
+  }
+
+  const htmlText =
+    `🔒 Security alert in ${link(repository.html_url, repository.full_name)}\n` +
+    `${link(alert.html_url, alertTitle)}\n` +
+    `Severity: ${escapeHtml(severity)} · Dependency: ${escapeHtml(packageName)} (${escapeHtml(ecosystem)})\n` +
+    (vulnerableRange ? `Vulnerable range: ${escapeHtml(vulnerableRange)}\n` : "") +
+    (patchedVersion ? `Patched in: ${escapeHtml(patchedVersion)}\n` : "") +
+    (idLine ? `Advisory: ${escapeHtml(idLine)}` : "");
+
+  if (format === "inline_buttons") {
+    const keyboard = new InlineKeyboard().url("View Alert", alert.html_url);
+    return { text: htmlText, parseMode: "HTML", replyMarkup: keyboard };
+  }
+
+  return { text: htmlText, parseMode: "HTML" };
+}
+
 export function formatMergeConflictEvent(
   pr: { html_url: string; number: number; title: string },
   repository: { html_url: string; full_name: string },

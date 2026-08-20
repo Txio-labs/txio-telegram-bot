@@ -4,7 +4,8 @@
     "issues": 101,
     "pullRequests": 102,
     "ci": 103,
-    "deploys": 104
+    "deploys": 104,
+    "security": 110
   },
   "txio-labs/txio-cli": {
     "chatId": "-1001234567890",
@@ -20,6 +21,7 @@
     "issues": 106,
     "pullRequests": 107,
     "ci": 108,
-    "deploys": 109
+    "deploys": 109,
+    "security": 111
   }
 }
