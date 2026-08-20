@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import {
+  isDuplicateDelivery,
   isMergeConflicted,
   seenDeliveries,
   webhooks,
@@ -396,5 +397,18 @@ describe("pull_request.opened webhook branching", () => {
       undefined,
       expect.objectContaining({ parseMode: "HTML" })
     );
+  });
+});
+
+describe("isDuplicateDelivery", () => {
+  beforeEach(() => {
+    seenDeliveries.clear();
+  });
+
+  it("detects duplicate deliveries", () => {
+    expect(isDuplicateDelivery("deliv-1")).toBe(false);
+    expect(isDuplicateDelivery("deliv-1")).toBe(true);
+    expect(isDuplicateDelivery("deliv-2")).toBe(false);
+    expect(isDuplicateDelivery("deliv-2")).toBe(true);
   });
 });
