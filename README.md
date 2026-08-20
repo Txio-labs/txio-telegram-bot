@@ -5,13 +5,52 @@
 Ops bot for the Txio team.
 
 - Listens for GitHub webhook events (issues, pull requests, CI runs,
-  deployments, Dependabot security alerts) and posts a formatted notification
-  into the Telegram group. Each event type can optionally be routed to its own
-  forum topic, and pull requests / security alerts can be routed to a private
-  DM instead of the group.
+  deployments, branch create/delete, force-pushes to the default branch,
+  Dependabot security alerts) and posts a formatted notification into the
+  Telegram group. Each event type can optionally be routed to its own forum
+  topic, and pull requests / security alerts can be routed to a private DM
+  instead of the group.
 - Dependabot PRs labeled `dependencies` are formatted as a distinct
   "Dependency update" notification instead of a standard PR notification.
 - Welcomes new members when they join the group.
+
+## Notifications
+
+### CI runs
+
+Workflow runs are only reported once they reach a **completed** state
+(`success`, `failure`, `cancelled`, ...). The intermediate
+`requested` / `in_progress` transitions are intentionally **not**
+notified: they are emitted for every queued/in-flight build and would
+roughly double the message volume for little extra signal, while the
+completion event still surfaces every outcome, including cancelled runs.
+Only `workflow_run.completed` is subscribed to in
+`src/github/webhooks.ts`.
+
+### Stale PR/issue reminders
+
+The bot is otherwise fully webhook-driven, but it also runs a scheduled job
+that posts a daily digest of stale open PRs and issues. Anything with no
+activity (`updated_at`) for `STALE_THRESHOLD_DAYS` (default `7`) is grouped
+into a single digest message per destination chat — one message listing all
+stale items, not one message per item. Repos with nothing stale are skipped
+quietly.
+
+- **Schedule**: `STALE_REMINDER_CRON` (default `0 9 * * *` — 09:00 UTC).
+  Standard cron syntax; an invalid expression disables the reminder and logs
+  a warning.
+- **Tracked repos**: the keys of the `REPO_ROUTING_CONFIG_PATH` file, or
+  `STALE_REPO_NAMES` (comma-separated) when no routing file is set. Each
+  digest is routed to the repo's configured chat/topic (see
+  [multi-repo routing](#optional-multi-repo-routing)).
+- **Rate limits**: each repo is queried with a single
+  `GET /repos/{repo}/issues?state=open` call (the issues endpoint includes
+  pull requests). Set `GITHUB_TOKEN` to avoid the unauthenticated
+  60 requests/hour limit when monitoring several repos.
+- **Failures**: per-repo API errors and per-message send errors are logged
+  and never crash the service or abort the rest of the job.
+- **Message size**: digests are capped below Telegram's 4096-character limit;
+  overflow items are dropped and reported with a "…and N more" footer.
 
 ## Setup
 
@@ -29,8 +68,9 @@ Ops bot for the Txio team.
    Webhooks, add a webhook pointing at `<PUBLIC_URL>/webhooks/github`,
    content type `application/json` (GitHub defaults to
    `application/x-www-form-urlencoded` — you must change this), and a
-   secret matching `GITHUB_WEBHOOK_SECRET`. Subscribe to: Issues, Pull
-   requests, Workflow runs, Deployment statuses, Dependabot alerts.
+   secret matching `GITHUB_WEBHOOK_SECRET`. Subscribe to: Issues, Issue
+   comments, Pull requests, Workflow runs, Deployment statuses, Branches,
+   Dependabot alerts.
 6. **(Optional) Set GITHUB_TOKEN**: for merge-conflict detection on private
    repos and to avoid rate limits on public repos, create a fine-grained
    personal access token (PAT) or GitHub App installation token with
@@ -47,7 +87,8 @@ routing to work.
 - **Topic ids**: open the topic, send a message, then check
   `getUpdates` for `"message_thread_id"` in that update. Set
   `TOPIC_THREAD_ISSUES` / `TOPIC_THREAD_CI` / `TOPIC_THREAD_DEPLOYS` /
-  `TOPIC_THREAD_SECURITY`. Unset ones fall back to the group's General topic.
+  `TOPIC_THREAD_BRANCHES` / `TOPIC_THREAD_SECURITY`. Unset ones fall back to
+  the group's General topic.
 - **PR private DM**: DM the bot directly, send it any message, then check
   `getUpdates` for that message's `"chat":{"id": ...}` (your personal chat
   id, a positive number). Set `PULL_REQUEST_CHAT_ID` — pull request
@@ -84,7 +125,8 @@ notifications to a distinct chat or forum topic. Create a JSON file
     "pullRequests": 102,
     "ci": 103,
     "deploys": 104,
-    "security": 110
+    "branches": 110,
+    "security": 112
   },
   "txio-labs/txio-cli": {
     "chatId": "-1001234567890",
@@ -97,9 +139,9 @@ Each key is a `repository.full_name` (case-insensitive). The value is an
 object with:
 
 - `chatId` (optional) — overrides `TELEGRAM_CHAT_ID` for that repo.
-- `issues` / `pullRequests` / `ci` / `deploys` / `security` (optional) —
-  overrides the corresponding `TOPIC_THREAD_*` for that event type in that
-  chat.
+- `issues` / `pullRequests` / `ci` / `deploys` / `branches` / `security`
+  (optional) — overrides the corresponding `TOPIC_THREAD_*` for that event
+  type in that chat.
 
 Repos not present in the file, or event types left blank, fall back to the
 defaults (`TELEGRAM_CHAT_ID` and `TOPIC_THREAD_*` env vars).
