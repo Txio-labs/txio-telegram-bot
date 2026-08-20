@@ -3,6 +3,9 @@ services:
     name: txio-telegram-bot
     runtime: docker
     dockerfilePath: ./Dockerfile
+    # Note: the stale reminder runs on an in-process timer, so the service
+    # must stay warm (Render free instances spin down after idle time, which
+    # would pause the scheduled job).
     plan: free
     healthCheckPath: /healthz
     envVars:

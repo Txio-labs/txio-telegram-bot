@@ -3,6 +3,7 @@ import { createNodeMiddleware } from "@octokit/webhooks";
 import { webhookCallback } from "grammy";
 import { config } from "./config.js";
 import { webhooks } from "./github/webhooks.js";
+import { startScheduler } from "./scheduler.js";
 import { bot } from "./telegram/client.js";
 
 const app = express();
@@ -41,6 +42,7 @@ const server = app.listen(config.port, async () => {
   } catch (error) {
     console.error("Failed to register Telegram webhook:", error);
   }
+  startScheduler();
 });
 
 const shutdownTimeoutMs = 10_000;
