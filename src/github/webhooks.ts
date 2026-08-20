@@ -16,6 +16,11 @@ export const webhooks = new Webhooks({ secret: config.githubWebhookSecret });
 const MAX_DELIVERY_CACHE_SIZE = 1000;
 export const seenDeliveries = new Set<string>();
 
+// Tracks PRs that are currently known to be conflicted.
+// A PR is removed once it is no longer conflicted, allowing a future
+// conflict on the same PR to trigger a new notification.
+const conflictedPullRequests = new Set<string>();
+
 export function isDuplicateDelivery(id: string | undefined): boolean {
   if (!id) return false;
   if (seenDeliveries.has(id)) {
@@ -50,7 +55,12 @@ webhooks.on(["pull_request.closed", "pull_request.reopened"], async (event) => {
   let threadId: number | undefined;
 
   if (channel === "topic_thread") {
-    const dest = resolveDestination(repoFullName, "pullRequests", config.telegramChatId, config.topicThreads.pullRequests);
+    const dest = resolveDestination(
+      repoFullName,
+      "pullRequests",
+      config.telegramChatId,
+      config.topicThreads.pullRequests,
+    );
     targetChatId = dest.chatId;
     threadId = dest.threadId;
   } else if (channel === "dm") {
@@ -72,7 +82,12 @@ webhooks.on("pull_request.opened", async (event) => {
   let threadId: number | undefined;
 
   if (channel === "topic_thread") {
-    const dest = resolveDestination(repoFullName, "pullRequests", config.telegramChatId, config.topicThreads.pullRequests);
+    const dest = resolveDestination(
+      repoFullName,
+      "pullRequests",
+      config.telegramChatId,
+      config.topicThreads.pullRequests,
+    );
     targetChatId = dest.chatId;
     threadId = dest.threadId;
   } else if (channel === "dm") {
@@ -91,38 +106,72 @@ export async function isMergeConflicted(
   pr: { number: number; mergeable?: boolean | null },
   repository: { full_name: string },
 ): Promise<boolean> {
-  if (pr.mergeable !== null && pr.mergeable !== undefined) return pr.mergeable === false;
+  if (pr.mergeable !== null && pr.mergeable !== undefined) {
+    return pr.mergeable === false;
+  }
 
   await new Promise((resolve) => setTimeout(resolve, 4000));
-  const headers: Record<string, string> = { Accept: "application/vnd.github+json" };
+  const headers: Record<string, string> = {
+    Accept: "application/vnd.github+json",
+  };
+
   if (config.githubToken) {
     headers.Authorization = `Bearer ${config.githubToken}`;
   }
-  const res = await fetch(`https://api.github.com/repos/${repository.full_name}/pulls/${pr.number}`, {
-    headers,
-  });
+
+  const res = await fetch(
+    `https://api.github.com/repos/${repository.full_name}/pulls/${pr.number}`,
+    { headers },
+  );
+
   if (!res.ok) return false;
+
   const data = (await res.json()) as { mergeable: boolean | null };
   return data.mergeable === false;
 }
 
-webhooks.on(["pull_request.opened", "pull_request.synchronize", "pull_request.reopened"], async (event) => {
+webhooks.on(
+  ["pull_request.opened", "pull_request.synchronize", "pull_request.reopened"],
+  async (event) => {
+    if (isDuplicateDelivery(event.id)) return;
+
+    const { pull_request: pr, repository } = event.payload;
+    const prKey = `${repository.full_name}#${pr.number}`;
+    const conflicted = await isMergeConflicted(pr, repository);
+
+    if (!conflicted) {
+      conflictedPullRequests.delete(prKey);
+      return;
+    }
+
+    // Already alerted for this conflict state.
+    if (conflictedPullRequests.has(prKey)) return;
+
+    conflictedPullRequests.add(prKey);
+
+    const message = formatMergeConflictEvent(pr, repository);
+    const { chatId } = resolveDestination(
+      repository?.full_name,
+      "pullRequests",
+      config.pullRequestChatId ?? config.telegramChatId,
+      undefined,
+    );
+
+    await sendMessage(chatId, message);
+  },
+);
+
+webhooks.on("pull_request.closed", async (event) => {
   if (isDuplicateDelivery(event.id)) return;
+
   const { pull_request: pr, repository } = event.payload;
-  if (!(await isMergeConflicted(pr, repository))) return;
-  const message = formatMergeConflictEvent(pr, repository);
-  const { chatId } = resolveDestination(
-    repository?.full_name,
-    "pullRequests",
-    config.pullRequestChatId ?? config.telegramChatId,
-    undefined,
-  );
-  await sendMessage(chatId, message);
+  conflictedPullRequests.delete(`${repository.full_name}#${pr.number}`);
 });
 
 webhooks.on("workflow_run.completed", async (event) => {
   if (isDuplicateDelivery(event.id)) return;
   const message = formatWorkflowRunEvent(event);
+
   if (message) {
     const { chatId, threadId } = resolveDestination(
       event.payload.repository?.full_name,
@@ -136,12 +185,14 @@ webhooks.on("workflow_run.completed", async (event) => {
 
 webhooks.on("deployment_status.created", async (event) => {
   if (isDuplicateDelivery(event.id)) return;
+
   const { chatId, threadId } = resolveDestination(
     event.payload.repository?.full_name,
     "deploys",
     config.telegramChatId,
     config.topicThreads.deploys,
   );
+
   await sendMessage(chatId, formatDeploymentStatusEvent(event), threadId);
 });
 
