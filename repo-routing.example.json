@@ -5,7 +5,8 @@
     "pullRequests": 102,
     "ci": 103,
     "deploys": 104,
-    "branches": 110
+    "branches": 110,
+    "releases": 112
   },
   "txio-labs/txio-cli": {
     "chatId": "-1001234567890",

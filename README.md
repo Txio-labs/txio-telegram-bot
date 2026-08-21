@@ -66,7 +66,8 @@ quietly.
    content type `application/json` (GitHub defaults to
    `application/x-www-form-urlencoded` — you must change this), and a
    secret matching `GITHUB_WEBHOOK_SECRET`. Subscribe to: Issues, Issue
-   comments, Pull requests, Workflow runs, Deployment statuses, Branches.
+   comments, Pull requests, Workflow runs, Deployment statuses, Branches,
+   Releases.
 6. **(Optional) Set GITHUB_TOKEN**: for merge-conflict detection on private
    repos and to avoid rate limits on public repos, create a fine-grained
    personal access token (PAT) or GitHub App installation token with
@@ -83,7 +84,7 @@ routing to work.
 - **Topic ids**: open the topic, send a message, then check
   `getUpdates` for `"message_thread_id"` in that update. Set
   `TOPIC_THREAD_ISSUES` / `TOPIC_THREAD_CI` / `TOPIC_THREAD_DEPLOYS` /
-  `TOPIC_THREAD_BRANCHES`.
+  `TOPIC_THREAD_BRANCHES` / `TOPIC_THREAD_RELEASES`.
   Unset ones fall back to the group's General topic.
 - **PR private DM**: DM the bot directly, send it any message, then check
   `getUpdates` for that message's `"chat":{"id": ...}` (your personal chat
@@ -105,7 +106,8 @@ notifications to a distinct chat or forum topic. Create a JSON file
     "pullRequests": 102,
     "ci": 103,
     "deploys": 104,
-    "branches": 110
+    "branches": 110,
+    "releases": 112
   },
   "txio-labs/txio-cli": {
     "chatId": "-1001234567890",
@@ -118,7 +120,7 @@ Each key is a `repository.full_name` (case-insensitive). The value is an
 object with:
 
 - `chatId` (optional) — overrides `TELEGRAM_CHAT_ID` for that repo.
-- `issues` / `pullRequests` / `ci` / `deploys` / `branches` (optional) —
+- `issues` / `pullRequests` / `ci` / `deploys` / `branches` / `releases` (optional) —
   overrides the corresponding `TOPIC_THREAD_*` for that event type in
   that chat.
 

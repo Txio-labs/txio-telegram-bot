@@ -11,6 +11,7 @@ import {
   formatMergeConflictEvent,
   formatPullRequestClosedEvent,
   formatPullRequestOpenedEvent,
+  formatReleaseEvent,
   formatWorkflowRunEvent,
 } from "./formatters.js";
 
@@ -211,6 +212,20 @@ webhooks.on("push", async (event) => {
     config.topicThreads.branches,
   );
   await sendMessage(chatId, formatForcePushEvent(event), threadId);
+});
+
+webhooks.on("release.published", async (event) => {
+  if (isDuplicateDelivery(event.id)) return;
+  const message = formatReleaseEvent(event);
+  if (message) {
+    const { chatId, threadId } = resolveDestination(
+      event.payload.repository?.full_name,
+      "releases",
+      config.telegramChatId,
+      config.topicThreads.releases,
+    );
+    await sendMessage(chatId, message, threadId);
+  }
 });
 
 webhooks.onError((error) => {
