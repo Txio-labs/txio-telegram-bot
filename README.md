@@ -90,6 +90,22 @@ routing to work.
   `getUpdates` for that message's `"chat":{"id": ...}` (your personal chat
   id, a positive number). Set `PULL_REQUEST_CHAT_ID` — pull request
   notifications go there instead of the group.
+- **Security alert private DM**: as above, set `SECURITY_ALERT_CHAT_ID` —
+  security alert notifications go there instead of the group.
+
+### Optional: security alert delivery
+
+Security alert ("Dependabot alert raised") notifications are configurable
+the same way as pull request notifications:
+
+- `SECURITY_ALERT_CHANNEL` — `main_chat` (default) | `topic_thread` | `dm`
+- `SECURITY_ALERT_FORMAT` — `markdown_summary` (default) | `plain_text` |
+  `inline_buttons`
+
+The supported combinations are `main_chat + markdown_summary` (default),
+`topic_thread + markdown_summary`, and `dm + plain_text`. With no variables
+set, security alerts post to the group's General topic with a linked
+summary, matching the bot's other notifications.
 
 ### Optional: multi-repo routing
 
@@ -127,11 +143,54 @@ object with:
 Repos not present in the file, or event types left blank, fall back to the
 defaults (`TELEGRAM_CHAT_ID` and `TOPIC_THREAD_*` env vars).
 
+### Optional: label filtering per destination
+
+You can restrict which issues or pull requests trigger notifications by
+adding a `labels` allowlist to any event-category entry. Only events whose
+payload includes **at least one** label that exactly matches an entry in
+the allowlist will be forwarded. Matching is **case-sensitive**.
+
+```json
+{
+  "txio-labs/txio-backend": {
+    "chatId": "-1001234567890",
+    "issues": {
+      "threadId": 101,
+      "labels": ["urgent", "critical"]
+    },
+    "pullRequests": {
+      "threadId": 102,
+      "labels": ["urgent"]
+    },
+    "ci": 103,
+    "deploys": 104
+  }
+}
+```
+
+In this example, only issues labelled `urgent` or `critical` will post to
+thread 101, and only pull requests labelled `urgent` will post to thread
+102. CI and deployment events are unaffected — they always pass through
+regardless of any `labels` key on those entries.
+
+**Edge cases:**
+
+- An issue or pull request with **zero labels** when an allowlist is
+  configured will **not** be forwarded to that destination.
+- Label matching is exact and case-sensitive: `"Urgent"` does not match
+  `"urgent"`.
+- Events that carry no labels field in their payload — specifically CI
+  (`workflow_run.completed`) and deployment (`deployment_status.created`)
+  events — always pass through and are never filtered by a `labels` key.
+- Suppressed events are logged at `debug` level so you can diagnose
+  misconfigured allowlists.
+
 ## Run
 
 ```
 npm install
 npm run dev     # local development, ts via tsx
+npm test        # run the unit test suite
 npm run build && npm start   # production
 ```
 

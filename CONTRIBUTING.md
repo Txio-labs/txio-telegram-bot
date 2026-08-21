@@ -24,7 +24,7 @@ Enhancement suggestions are tracked as GitHub issues. Please include:
 ### Pull Requests
 
 * Do not include issue numbers in the PR title.
-* Before merging, automated checks must pass (build/typecheck; tests once a suite exists).
+* Before merging, automated checks must pass (build/typecheck and tests).
 * End all files with a newline.
 * Keep PRs scoped to a single concern — this makes review faster and keeps `git blame` useful.
 
@@ -33,12 +33,13 @@ Enhancement suggestions are tracked as GitHub issues. Please include:
 ```bash
 npm install
 npm run dev     # local development, runs src/index.ts via tsx with live reload
+npm test        # run the unit test suite
 npm run build && npm start   # production build
 ```
 
 You'll need a `.env` file (copy `.env.example`) with a Telegram bot token, chat id, and a GitHub webhook secret — see the [README](./README.md#setup) for the full setup walkthrough.
 
-There is no automated test suite yet; if you're adding a webhook handler or formatter, consider adding unit tests for it as part of your PR.
+If you're adding a webhook handler or formatter, add or update unit tests for it as part of your PR.
 
 ## Styleguides
 
