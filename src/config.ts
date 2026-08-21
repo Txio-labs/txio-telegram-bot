@@ -28,28 +28,16 @@ function optionalString(name: string): string | undefined {
 
 // ── Repo routing ──────────────────────────────────────────────────────
 
-export type EventCategory =
-  | "issues"
-  | "pullRequests"
-  | "ci"
-  | "deploys"
-  | "branches"
-  | "security";
-
-export type EventCategoryConfig = {
-  threadId?: number;
-  /** Optional label allowlist. When set, only events with at least one matching label are forwarded. Matching is case-sensitive. */
-  labels?: string[];
-};
+export type EventCategory = "issues" | "pullRequests" | "ci" | "deploys" | "branches" | "releases";
 
 export type RepoRoute = {
   chatId?: string | number;
-  issues?: number | EventCategoryConfig;
-  pullRequests?: number | EventCategoryConfig;
-  ci?: number | EventCategoryConfig;
-  deploys?: number | EventCategoryConfig;
-  branches?: number | EventCategoryConfig;
-  security?: number | EventCategoryConfig;
+  issues?: number;
+  pullRequests?: number;
+  ci?: number;
+  deploys?: number;
+  branches?: number;
+  releases?: number;
 };
 
 export type RepoRoutingConfig = Record<string, RepoRoute>;
@@ -133,7 +121,7 @@ function loadRepoRoutingConfig(): RepoRoutingConfig {
       );
     }
     for (const key of Object.keys(route as Record<string, unknown>)) {
-      const allowed = ["chatId", "issues", "pullRequests", "ci", "deploys", "branches", "security"];
+      const allowed = ["chatId", "issues", "pullRequests", "ci", "deploys", "branches", "releases"];
       if (!allowed.includes(key)) {
         throw new Error(
           `REPO_ROUTING_CONFIG_PATH "${configPath}": unknown key "${key}" in entry for "${repo}"`,
@@ -235,7 +223,7 @@ export const config = {
     ci: optionalInt("TOPIC_THREAD_CI"),
     deploys: optionalInt("TOPIC_THREAD_DEPLOYS"),
     branches: optionalInt("TOPIC_THREAD_BRANCHES"),
-    security: optionalInt("TOPIC_THREAD_SECURITY"),
+    releases: optionalInt("TOPIC_THREAD_RELEASES"),
   },
   prOpened: {
     channel: process.env.PR_OPENED_CHANNEL ?? "main_chat",
