@@ -6,7 +6,6 @@ import {
   formatBranchCreatedEvent,
   formatBranchDeletedEvent,
   formatCommentEvent,
-  formatDependencyUpdateEvent,
   formatDeploymentStatusEvent,
   formatForcePushEvent,
   formatIssueEvent,
@@ -265,6 +264,21 @@ webhooks.on("pull_request_review.submitted", async (event) => {
   });
 });
 
+webhooks.on("issue_comment.created", async (event) => {
+  if (isDuplicateDelivery(event.id)) return;
+  const { issue, comment, repository } = event.payload;
+  // Skip automation (e.g. other bots commenting) to avoid notification loops.
+  if (comment.user?.type === "Bot") return;
+  const isPr = Boolean(issue.pull_request);
+  const { chatId, threadId } = resolveDestination(
+    repository?.full_name,
+    isPr ? "pullRequests" : "issues",
+    config.telegramChatId,
+    isPr ? config.topicThreads.pullRequests : config.topicThreads.issues,
+  );
+  await sendMessage(chatId, formatCommentEvent(event), threadId);
+});
+
 webhooks.on("workflow_run.completed", async (event) => {
   if (isDuplicateDelivery(event.id)) return;
   const message = formatWorkflowRunEvent(event);
@@ -340,28 +354,6 @@ webhooks.on("push", async (event) => {
     config.topicThreads.branches,
   );
   await sendMessage(chatId, formatForcePushEvent(event), threadId);
-});
-
-webhooks.on("dependabot_alert.created", async (event) => {
-  if (isDuplicateDelivery(event.id)) return;
-  const { channel, format } = config.securityAlert;
-  const { text, parseMode, replyMarkup } = formatSecurityAlertEvent(event, format);
-
-  const repoFullName = event.payload.repository?.full_name;
-  let targetChatId: string | number = config.telegramChatId;
-  let threadId: number | undefined;
-
-  if (channel === "topic_thread") {
-    const dest = resolveDestination(repoFullName, "security", config.telegramChatId, config.topicThreads.security);
-    targetChatId = dest.chatId;
-    threadId = dest.threadId;
-  } else if (channel === "dm") {
-    if (config.securityAlertChatId) {
-      targetChatId = config.securityAlertChatId;
-    }
-  }
-
-  await sendMessage(targetChatId, text, threadId, { parseMode, replyMarkup });
 });
 
 webhooks.onError((error) => {
