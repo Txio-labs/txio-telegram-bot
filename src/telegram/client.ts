@@ -1,8 +1,16 @@
 import { Bot } from "grammy";
+import { autoRetry } from "@grammyjs/auto-retry";
 import { config } from "../config.js";
 import { escapeHtml } from "../utils/html.js";
 
 export const bot = new Bot(config.telegramBotToken);
+
+bot.api.config.use(
+  autoRetry({
+    maxRetryAttempts: 5,
+    maxDelaySeconds: 30,
+  }),
+);
 
 // Catch-all error handler to prevent unhandled promise rejections from crashing the process
 bot.catch((err) => {
