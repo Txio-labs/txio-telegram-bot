@@ -17,6 +17,32 @@ import {
   formatWorkflowRunEvent,
 } from "./formatters.js";
 
+async function dispatchNotification(
+  eventName: string,
+  repoFullName: string | undefined,
+  eventCategory: EventCategory,
+  formatterResult: { text: string; parseMode?: "HTML"; replyMarkup?: any } | null
+) {
+  if (!formatterResult) return;
+  const { channel } = getDeliveryConfig(eventName);
+  const { text, parseMode, replyMarkup } = formatterResult;
+
+  let targetChatId: string | number = config.telegramChatId;
+  let threadId: number | undefined;
+
+  if (channel === "topic_thread") {
+    const dest = resolveDestination(repoFullName, eventCategory, config.telegramChatId, config.topicThreads[eventCategory]);
+    targetChatId = dest.chatId;
+    threadId = dest.threadId;
+  } else if (channel === "dm") {
+    if (config.pullRequestChatId) {
+      targetChatId = config.pullRequestChatId;
+    }
+  }
+
+  await sendMessage(targetChatId, text, threadId, { parseMode, replyMarkup });
+}
+
 export const webhooks = new Webhooks({ secret: config.githubWebhookSecret });
 
 // Bounded in-memory dedup cache for X-GitHub-Delivery IDs
@@ -46,8 +72,7 @@ webhooks.on(["issues.opened", "issues.closed", "issues.reopened"], async (event)
   const dest = resolveDestination(
     event.payload.repository?.full_name,
     "issues",
-    config.telegramChatId,
-    config.topicThreads.issues,
+    formatIssueEvent(event, format)
   );
   const payloadLabels = (event.payload.issue.labels ?? []).map((l) => l?.name).filter((n): n is string => typeof n === "string");
   if (!labelMatchesAllowlist(payloadLabels, dest.labels)) {
@@ -286,8 +311,7 @@ webhooks.on("deployment_status.created", async (event) => {
   const { chatId, threadId } = resolveDestination(
     event.payload.repository?.full_name,
     "deploys",
-    config.telegramChatId,
-    config.topicThreads.deploys,
+    formatDeploymentStatusEvent(event, format)
   );
 
   await sendMessage(chatId, formatDeploymentStatusEvent(event), threadId);

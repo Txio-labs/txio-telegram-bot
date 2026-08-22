@@ -6,14 +6,29 @@ export function link(url: string, label: string): string {
   return `<a href="${escapeHtml(url)}">${escapeHtml(label)}</a>`;
 }
 
-export function formatIssueEvent({ payload }: EmitterWebhookEvent<"issues">): string {
+export function formatIssueEvent(
+  { payload }: EmitterWebhookEvent<"issues">,
+  format: string
+): { text: string; parseMode?: "HTML"; replyMarkup?: any } {
   const { action, issue, repository } = payload;
   const icon = action === "opened" ? "🆕" : action === "reopened" ? "🔁" : "✅";
-  return (
+
+  if (format === "plain_text") {
+    const text = `${icon} Issue ${action} in ${repository.full_name}\n#${issue.number} ${issue.title}\nby ${issue.user?.login ?? "unknown"}`;
+    return { text, parseMode: undefined };
+  }
+
+  const htmlText =
     `${icon} Issue ${action} in ${link(repository.html_url, repository.full_name)}\n` +
     `${link(issue.html_url, `#${issue.number} ${issue.title}`)}\n` +
-    `by ${escapeHtml(issue.user?.login ?? "unknown")}`
-  );
+    `by ${escapeHtml(issue.user?.login ?? "unknown")}`;
+
+  if (format === "inline_buttons") {
+    const keyboard = new InlineKeyboard().url("View Issue", issue.html_url);
+    return { text: htmlText, parseMode: "HTML", replyMarkup: keyboard };
+  }
+
+  return { text: htmlText, parseMode: "HTML" };
 }
 
 export function formatPullRequestClosedEvent(
@@ -135,11 +150,23 @@ export function formatSecurityAlertEvent(
 export function formatMergeConflictEvent(
   pr: { html_url: string; number: number; title: string },
   repository: { html_url: string; full_name: string },
-): string {
-  return (
+  format: string
+): { text: string; parseMode?: "HTML"; replyMarkup?: any } {
+  if (format === "plain_text") {
+    const text = `⚠️ Merge conflict on ${repository.full_name}\n#${pr.number} ${pr.title} can't be merged — needs to be updated with the base branch.`;
+    return { text, parseMode: undefined };
+  }
+
+  const htmlText =
     `⚠️ Merge conflict on ${link(repository.html_url, repository.full_name)}\n` +
-    `${link(pr.html_url, `#${pr.number} ${pr.title}`)} can't be merged — needs to be updated with the base branch.`
-  );
+    `${link(pr.html_url, `#${pr.number} ${pr.title}`)} can't be merged — needs to be updated with the base branch.`;
+
+  if (format === "inline_buttons") {
+    const keyboard = new InlineKeyboard().url("Resolve Conflict", pr.html_url);
+    return { text: htmlText, parseMode: "HTML", replyMarkup: keyboard };
+  }
+
+  return { text: htmlText, parseMode: "HTML" };
 }
 
 export const COMMENT_PREVIEW_LENGTH = 200;
@@ -171,23 +198,48 @@ export function formatWorkflowRunEvent({
   const { workflow_run: run, repository } = payload;
   if (run.status !== "completed") return null;
   const icon = run.conclusion === "success" ? "✅" : run.conclusion === "cancelled" ? "⚪" : "❌";
-  return (
+  
+  if (format === "plain_text") {
+    const text = `${icon} CI ${run.conclusion} for ${repository.full_name}\n${run.name ?? "workflow"} on ${run.head_branch ?? "unknown"}`;
+    return { text, parseMode: undefined };
+  }
+
+  const htmlText =
     `${icon} CI ${run.conclusion} for ${link(repository.html_url, repository.full_name)}\n` +
-    `${link(run.html_url, run.name ?? "workflow")} on ${escapeHtml(run.head_branch ?? "unknown")}`
-  );
+    `${link(run.html_url, run.name ?? "workflow")} on ${escapeHtml(run.head_branch ?? "unknown")}`;
+
+  if (format === "inline_buttons") {
+    const keyboard = new InlineKeyboard().url("View Logs", run.html_url);
+    return { text: htmlText, parseMode: "HTML", replyMarkup: keyboard };
+  }
+
+  return { text: htmlText, parseMode: "HTML" };
 }
 
-export function formatDeploymentStatusEvent({
-  payload,
-}: EmitterWebhookEvent<"deployment_status">): string {
+export function formatDeploymentStatusEvent(
+  { payload }: EmitterWebhookEvent<"deployment_status">,
+  format: string
+): { text: string; parseMode?: "HTML"; replyMarkup?: any } {
   const { deployment_status: status, deployment, repository } = payload;
   const icon = status.state === "success" ? "🚀" : status.state === "failure" || status.state === "error" ? "❌" : "⏳";
-  return (
+
+  if (format === "plain_text") {
+    const text = `${icon} Deploy ${status.state} — ${deployment.environment} (${repository.full_name})\n` + (status.log_url ? `Logs: ${status.log_url}` : "");
+    return { text, parseMode: undefined };
+  }
+
+  const htmlText =
     `${icon} Deploy ${status.state} — ${escapeHtml(deployment.environment)} (${link(
       repository.html_url,
       repository.full_name,
-    )})\n` + (status.log_url ? link(status.log_url, "logs") : "")
-  );
+    )})\n` + (status.log_url ? link(status.log_url, "logs") : "");
+
+  if (format === "inline_buttons" && status.log_url) {
+    const keyboard = new InlineKeyboard().url("View Logs", status.log_url);
+    return { text: htmlText, parseMode: "HTML", replyMarkup: keyboard };
+  }
+
+  return { text: htmlText, parseMode: "HTML" };
 }
 
 export function formatBranchCreatedEvent({

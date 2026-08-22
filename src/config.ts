@@ -218,6 +218,19 @@ export function labelMatchesAllowlist(
   return payloadLabels.some((label) => allowlist.includes(label));
 }
 
+export interface EventDeliveryConfig {
+  channel: string;
+  format: string;
+}
+
+export function getDeliveryConfig(eventName: string): EventDeliveryConfig {
+  const envPrefix = eventName.toUpperCase().replace(/[^A-Z0-9]/g, "_");
+  return {
+    channel: process.env[`${envPrefix}_CHANNEL`] ?? "main_chat",
+    format: process.env[`${envPrefix}_FORMAT`] ?? "markdown_summary",
+  };
+}
+
 export const config = {
   port: Number(process.env.PORT ?? 3000),
   telegramBotToken: required("TELEGRAM_BOT_TOKEN"),
