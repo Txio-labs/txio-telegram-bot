@@ -1,6 +1,6 @@
 # txio-telegram-bot
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT) [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](http://makeapullrequest.com)
+[![CI](https://github.com/txio-labs/txio-telegram-bot/actions/workflows/ci.yml/badge.svg)](https://github.com/txio-labs/txio-telegram-bot/actions/workflows/ci.yml) [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT) [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](http://makeapullrequest.com)
 
 Ops bot for the Txio team.
 
