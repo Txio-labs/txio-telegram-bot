@@ -52,6 +52,29 @@ quietly.
 - **Message size**: digests are capped below Telegram's 4096-character limit;
   overflow items are dropped and reported with a "…and N more" footer.
 
+### Weekly bus-factor reports
+
+The bot samples recent commit history and reports files whose commits are
+highly concentrated in one human author. The default schedule is Monday at
+09:00 UTC (`BUS_FACTOR_CRON=0 9 * * 1`). Reports contain at most five files per
+repository and use the same repo chat/topic routing as issue notifications.
+
+- `BUS_FACTOR_THRESHOLD_PERCENT` — minimum single-author concentration (default
+  `70`).
+- `BUS_FACTOR_MIN_COMMITS` — minimum non-bot commits touching a file (default
+  `5`); smaller histories are excluded as too weak to be meaningful.
+- `BUS_FACTOR_RECENT_COMMITS` — commits sampled per repository (default `30`).
+- `BUS_FACTOR_TOP_FILES` — maximum files shown per repository (default `5`).
+
+The data source is GitHub REST: one `GET /commits` request and one detail
+request per sampled commit (`GET /commits/{sha}`), requested sequentially per
+repository. This avoids local clone disk and authentication management, but a
+four-repository deployment sampling 30 commits can use about 124 authenticated
+API requests per weekly run. Set `GITHUB_TOKEN` for private repositories and
+predictable rate limits; unauthenticated requests are limited to 60 per hour.
+Bot-authored commits are ignored, and GitHub rename metadata is followed so
+moved files retain their history. API failures are logged per repository.
+
 ## Setup
 
 1. **Create the bot**: message [@BotFather](https://t.me/BotFather) on

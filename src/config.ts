@@ -22,6 +22,13 @@ function optionalPositiveInt(name: string, fallback: number): number {
   return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
 }
 
+function optionalPercent(name: string, fallback: number): number {
+  const raw = process.env[name];
+  if (raw === undefined || raw === "") return fallback;
+  const parsed = Number(raw);
+  return Number.isInteger(parsed) && parsed >= 0 && parsed <= 100 ? parsed : fallback;
+}
+
 function optionalString(name: string): string | undefined {
   return process.env[name];
 }
@@ -282,6 +289,14 @@ export const config = {
     // An open PR/issue counts as stale when its updated_at is older than this.
     thresholdDays: optionalPositiveInt("STALE_THRESHOLD_DAYS", 7),
     // Repos to query; derived from REPO_ROUTING_CONFIG_PATH (or STALE_REPO_NAMES).
+    repos: trackedRepos,
+  },
+  busFactor: {
+    cron: process.env.BUS_FACTOR_CRON ?? "0 9 * * 1",
+    thresholdPercent: optionalPercent("BUS_FACTOR_THRESHOLD_PERCENT", 70),
+    minCommits: optionalPositiveInt("BUS_FACTOR_MIN_COMMITS", 5),
+    recentCommits: optionalPositiveInt("BUS_FACTOR_RECENT_COMMITS", 30),
+    topFiles: optionalPositiveInt("BUS_FACTOR_TOP_FILES", 5),
     repos: trackedRepos,
   },
 };
