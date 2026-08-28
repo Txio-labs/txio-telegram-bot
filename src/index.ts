@@ -5,8 +5,13 @@ import { config } from "./config.js";
 import { webhooks } from "./github/webhooks.js";
 import { startScheduler } from "./scheduler.js";
 import { bot } from "./telegram/client.js";
+import { registerCommands } from "./telegram/commands.js";
 
 const app = express();
+
+// Interactive command surface (/help, /stats, label queries, health).
+// Registered before the webhook callback starts serving updates.
+registerCommands(bot);
 
 app.get("/healthz", (_req, res) => {
   res.status(200).send("ok");
