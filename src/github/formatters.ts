@@ -192,16 +192,17 @@ export function formatCommentEvent({
   );
 }
 
-export function formatWorkflowRunEvent({
-  payload,
-}: EmitterWebhookEvent<"workflow_run">): string | null {
+export function formatWorkflowRunEvent(
+  event: EmitterWebhookEvent<"workflow_run">,
+  format?: string,
+): string | null {
+  const { payload } = event;
   const { workflow_run: run, repository } = payload;
   if (run.status !== "completed") return null;
   const icon = run.conclusion === "success" ? "✅" : run.conclusion === "cancelled" ? "⚪" : "❌";
-  
+
   if (format === "plain_text") {
-    const text = `${icon} CI ${run.conclusion} for ${repository.full_name}\n${run.name ?? "workflow"} on ${run.head_branch ?? "unknown"}`;
-    return { text, parseMode: undefined };
+    return `${icon} CI ${run.conclusion} for ${repository.full_name}\n${run.name ?? "workflow"} on ${run.head_branch ?? "unknown"}`;
   }
 
   const htmlText =
@@ -209,11 +210,13 @@ export function formatWorkflowRunEvent({
     `${link(run.html_url, run.name ?? "workflow")} on ${escapeHtml(run.head_branch ?? "unknown")}`;
 
   if (format === "inline_buttons") {
-    const keyboard = new InlineKeyboard().url("View Logs", run.html_url);
-    return { text: htmlText, parseMode: "HTML", replyMarkup: keyboard };
+    // Keyboard variants need the FormattedMessage object shape; this
+    // formatter's callers (webhooks.ts) broadcast plain strings, so the
+    // logs link rides along as text instead.
+    return `${htmlText}\n${link(run.html_url, "View Logs")}`;
   }
 
-  return { text: htmlText, parseMode: "HTML" };
+  return htmlText;
 }
 
 export function formatDeploymentStatusEvent(

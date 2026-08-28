@@ -1,5 +1,5 @@
 import { Webhooks } from "@octokit/webhooks";
-import { config, resolveDestination, labelMatchesAllowlist } from "../config.js";
+import { config, resolveDestination, labelMatchesAllowlist, getDeliveryConfig, type EventCategory } from "../config.js";
 import { prChangesRequestedNotifier } from "../notifications/prChangesRequested.js";
 import { notifyChannel, sendMessage } from "../telegram/client.js";
 import {
@@ -72,7 +72,8 @@ webhooks.on(["issues.opened", "issues.closed", "issues.reopened"], async (event)
   const dest = resolveDestination(
     event.payload.repository?.full_name,
     "issues",
-    formatIssueEvent(event, format)
+    config.telegramChatId,
+    config.topicThreads.issues,
   );
   const payloadLabels = (event.payload.issue.labels ?? []).map((l) => l?.name).filter((n): n is string => typeof n === "string");
   if (!labelMatchesAllowlist(payloadLabels, dest.labels)) {
@@ -85,7 +86,8 @@ webhooks.on(["issues.opened", "issues.closed", "issues.reopened"], async (event)
     });
     return;
   }
-  await sendMessage(dest.chatId, formatIssueEvent(event), dest.threadId);
+  const { text, parseMode, replyMarkup } = formatIssueEvent(event, getDeliveryConfig("issues").format);
+  await sendMessage(dest.chatId, text, dest.threadId, { parseMode, replyMarkup });
 });
 
 webhooks.on(["pull_request.closed", "pull_request.reopened"], async (event) => {
@@ -253,8 +255,12 @@ webhooks.on(
       return;
     }
 
-    const message = formatMergeConflictEvent(pr, repository);
-    await sendMessage(dest.chatId, message);
+    const { text, parseMode, replyMarkup } = formatMergeConflictEvent(
+      pr,
+      repository,
+      getDeliveryConfig("merge_conflict").format,
+    );
+    await sendMessage(dest.chatId, text, dest.threadId, { parseMode, replyMarkup });
   },
 );
 
@@ -308,13 +314,19 @@ webhooks.on("workflow_run.completed", async (event) => {
 webhooks.on("deployment_status.created", async (event) => {
   if (isDuplicateDelivery(event.id)) return;
 
+  const { text, parseMode, replyMarkup } = formatDeploymentStatusEvent(
+    event,
+    getDeliveryConfig("deploys").format,
+  );
+
   const { chatId, threadId } = resolveDestination(
     event.payload.repository?.full_name,
     "deploys",
-    formatDeploymentStatusEvent(event, format)
+    config.telegramChatId,
+    config.topicThreads.deploys,
   );
 
-  await sendMessage(chatId, formatDeploymentStatusEvent(event), threadId);
+  await sendMessage(chatId, text, threadId, { parseMode, replyMarkup });
 });
 
 export function isBranchRef(refType: string | undefined): boolean {
