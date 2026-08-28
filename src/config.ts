@@ -218,16 +218,12 @@ export function labelMatchesAllowlist(
   return payloadLabels.some((label) => allowlist.includes(label));
 }
 
-export interface EventDeliveryConfig {
-  channel: string;
-  format: string;
-}
 
 export function getDeliveryConfig(eventName: string): EventDeliveryConfig {
   const envPrefix = eventName.toUpperCase().replace(/[^A-Z0-9]/g, "_");
   return {
-    channel: process.env[`${envPrefix}_CHANNEL`] ?? "main_chat",
-    format: process.env[`${envPrefix}_FORMAT`] ?? "markdown_summary",
+    channel: (process.env[`${envPrefix}_CHANNEL`] as DeliveryChannel) ?? "main_chat",
+    format: (process.env[`${envPrefix}_FORMAT`] as DeliveryFormat) ?? "markdown_summary",
   };
 }
 
@@ -251,12 +247,12 @@ export const config = {
     security: optionalInt("TOPIC_THREAD_SECURITY"),
   },
   prOpened: {
-    channel: process.env.PR_OPENED_CHANNEL ?? "main_chat",
-    format: process.env.PR_OPENED_FORMAT ?? "markdown_summary",
+    channel: (process.env.PR_OPENED_CHANNEL as DeliveryChannel) ?? "main_chat",
+    format: (process.env.PR_OPENED_FORMAT as DeliveryFormat) ?? "markdown_summary",
   },
   prClosed: {
-    channel: process.env.PR_CLOSED_CHANNEL ?? "main_chat",
-    format: process.env.PR_CLOSED_FORMAT ?? "markdown_summary",
+    channel: (process.env.PR_CLOSED_CHANNEL as DeliveryChannel) ?? "main_chat",
+    format: (process.env.PR_CLOSED_FORMAT as DeliveryFormat) ?? "markdown_summary",
   },
   prChangesRequested: {
     channel: (process.env.PR_CHANGES_REQUESTED_CHANNEL as DeliveryChannel) ?? "main_chat",
