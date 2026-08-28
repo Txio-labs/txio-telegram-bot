@@ -192,21 +192,31 @@ export function formatCommentEvent({
   );
 }
 
-export function formatWorkflowRunEvent({
-  payload,
-}: EmitterWebhookEvent<"workflow_run">): string | null {
+export function formatWorkflowRunEvent(event: EmitterWebhookEvent<"workflow_run">): string | null;
+export function formatWorkflowRunEvent(
+  event: EmitterWebhookEvent<"workflow_run">,
+  format: string,
+): { text: string; parseMode?: "HTML"; replyMarkup?: any } | null;
+export function formatWorkflowRunEvent(
+  { payload }: EmitterWebhookEvent<"workflow_run">,
+  format?: string,
+): string | { text: string; parseMode?: "HTML"; replyMarkup?: any } | null {
   const { workflow_run: run, repository } = payload;
   if (run.status !== "completed") return null;
   const icon = run.conclusion === "success" ? "✅" : run.conclusion === "cancelled" ? "⚪" : "❌";
-  
+
   if (format === "plain_text") {
-    const text = `${icon} CI ${run.conclusion} for ${repository.full_name}\n${run.name ?? "workflow"} on ${run.head_branch ?? "unknown"}`;
-    return { text, parseMode: undefined };
+    return {
+      text: `${icon} CI ${run.conclusion} for ${repository.full_name}\n${run.name ?? "workflow"} on ${run.head_branch ?? "unknown"}`,
+      parseMode: undefined,
+    };
   }
 
   const htmlText =
     `${icon} CI ${run.conclusion} for ${link(repository.html_url, repository.full_name)}\n` +
     `${link(run.html_url, run.name ?? "workflow")} on ${escapeHtml(run.head_branch ?? "unknown")}`;
+
+  if (format === undefined) return htmlText;
 
   if (format === "inline_buttons") {
     const keyboard = new InlineKeyboard().url("View Logs", run.html_url);
