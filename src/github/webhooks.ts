@@ -54,6 +54,14 @@ export const seenDeliveries = new Set<string>();
 // conflict on the same PR to trigger a new notification.
 const conflictedPullRequests = new Set<string>();
 
+export function clearConflictState(repoFullName: string, prNumber: number): void {
+  conflictedPullRequests.delete(`${repoFullName}#${prNumber}`);
+}
+
+export function hasConflictState(repoFullName: string, prNumber: number): boolean {
+  return conflictedPullRequests.has(`${repoFullName}#${prNumber}`);
+}
+
 export function isDuplicateDelivery(id: string | undefined): boolean {
   if (!id) return false;
   if (seenDeliveries.has(id)) {
@@ -90,6 +98,9 @@ webhooks.on(["issues.opened", "issues.closed", "issues.reopened"], async (event)
 
 webhooks.on(["pull_request.closed", "pull_request.reopened"], async (event) => {
   if (isDuplicateDelivery(event.id)) return;
+  if (event.payload.action === "closed") {
+    clearConflictState(event.payload.repository.full_name, event.payload.pull_request.number);
+  }
   const { channel, format } = config.prClosed;
   const { text, parseMode, replyMarkup } = formatPullRequestClosedEvent(event, format);
 
