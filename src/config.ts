@@ -275,6 +275,7 @@ export const config = {
     deploys: optionalInt("TOPIC_THREAD_DEPLOYS"),
     branches: optionalInt("TOPIC_THREAD_BRANCHES"),
     releases: optionalInt("TOPIC_THREAD_RELEASES"),
+    security: optionalInt("TOPIC_THREAD_SECURITY"),
   },
   prOpened: {
     channel: (process.env.PR_OPENED_CHANNEL as DeliveryChannel) ?? "main_chat",
