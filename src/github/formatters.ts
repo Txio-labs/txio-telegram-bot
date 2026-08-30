@@ -283,3 +283,20 @@ export function formatForcePushEvent({
     `by ${escapeHtml(sender?.login ?? "unknown")}`
   );
 }
+
+export function formatReleaseEvent({
+  payload,
+}: EmitterWebhookEvent<"release">): string | null {
+  const { release, repository } = payload;
+  if (release.draft) return null;
+  const icon = release.prerelease ? "🏷️" : "📦";
+  const tagLabel = release.tag_name + (release.name ? ` — ${release.name}` : "");
+  const lines = [
+    `${icon} Release published in ${link(repository.html_url, repository.full_name)}`,
+    `${link(release.html_url, tagLabel)}`,
+  ];
+  if (release.body) {
+    lines.push(escapeHtml(truncateCommentBody(release.body)));
+  }
+  return lines.join("\n");
+}
