@@ -1,5 +1,5 @@
 import { Webhooks } from "@octokit/webhooks";
-import { config, resolveDestination, labelMatchesAllowlist } from "../config.js";
+import { config, getDeliveryConfig, resolveDestination, labelMatchesAllowlist, type EventCategory } from "../config.js";
 import { prChangesRequestedNotifier } from "../notifications/prChangesRequested.js";
 import { notifyChannel, sendMessage } from "../telegram/client.js";
 import {
@@ -69,10 +69,13 @@ export function isDuplicateDelivery(id: string | undefined): boolean {
 
 webhooks.on(["issues.opened", "issues.closed", "issues.reopened"], async (event) => {
   if (isDuplicateDelivery(event.id)) return;
+  const { format } = getDeliveryConfig("issues");
+  const formatted = formatIssueEvent(event, format);
   const dest = resolveDestination(
     event.payload.repository?.full_name,
     "issues",
-    formatIssueEvent(event, format)
+    config.telegramChatId,
+    config.topicThreads.issues,
   );
   const payloadLabels = (event.payload.issue.labels ?? []).map((l) => l?.name).filter((n): n is string => typeof n === "string");
   if (!labelMatchesAllowlist(payloadLabels, dest.labels)) {
@@ -85,7 +88,7 @@ webhooks.on(["issues.opened", "issues.closed", "issues.reopened"], async (event)
     });
     return;
   }
-  await sendMessage(dest.chatId, formatIssueEvent(event), dest.threadId);
+  await sendMessage(dest.chatId, formatted.text, dest.threadId, { parseMode: formatted.parseMode, replyMarkup: formatted.replyMarkup });
 });
 
 webhooks.on(["pull_request.closed", "pull_request.reopened"], async (event) => {
@@ -253,8 +256,8 @@ webhooks.on(
       return;
     }
 
-    const message = formatMergeConflictEvent(pr, repository);
-    await sendMessage(dest.chatId, message);
+    const message = formatMergeConflictEvent(pr, repository, "markdown_summary");
+    await sendMessage(dest.chatId, message.text, dest.threadId, { parseMode: message.parseMode, replyMarkup: message.replyMarkup });
   },
 );
 
@@ -292,7 +295,8 @@ webhooks.on("pull_request_review.submitted", async (event) => {
 
 webhooks.on("workflow_run.completed", async (event) => {
   if (isDuplicateDelivery(event.id)) return;
-  const message = formatWorkflowRunEvent(event);
+  const { format } = getDeliveryConfig("workflow_run");
+  const message = formatWorkflowRunEvent(event, format);
 
   if (message) {
     const { chatId, threadId } = resolveDestination(
@@ -301,20 +305,23 @@ webhooks.on("workflow_run.completed", async (event) => {
       config.telegramChatId,
       config.topicThreads.ci,
     );
-    await sendMessage(chatId, message, threadId);
+    await sendMessage(chatId, message.text, threadId, { parseMode: message.parseMode, replyMarkup: message.replyMarkup });
   }
 });
 
 webhooks.on("deployment_status.created", async (event) => {
   if (isDuplicateDelivery(event.id)) return;
 
+  const { format } = getDeliveryConfig("deployment_status");
+  const formatted = formatDeploymentStatusEvent(event, format);
   const { chatId, threadId } = resolveDestination(
     event.payload.repository?.full_name,
     "deploys",
-    formatDeploymentStatusEvent(event, format)
+    config.telegramChatId,
+    config.topicThreads.deploys,
   );
 
-  await sendMessage(chatId, formatDeploymentStatusEvent(event), threadId);
+  await sendMessage(chatId, formatted.text, threadId, { parseMode: formatted.parseMode, replyMarkup: formatted.replyMarkup });
 });
 
 export function isBranchRef(refType: string | undefined): boolean {
