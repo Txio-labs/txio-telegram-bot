@@ -134,3 +134,96 @@ export async function getRepoStats(repo: string): Promise<RepoStats> {
 
   return { openIssues, openPullRequests, contributors };
 }
+
+// ── Repo summary (for /repo command) ────────────────────────────────
+
+export interface RepoSummary {
+  full_name: string;
+  html_url: string;
+  description: string | null;
+  stargazers_count: number;
+  forks_count: number;
+  open_issues_count: number;
+  language: string | null;
+  openPullRequests: number | string;
+}
+
+export async function getRepoSummary(repo: string): Promise<RepoSummary> {
+  const [repoData, stats] = await Promise.all([
+    ghFetch<{
+      full_name: string;
+      html_url: string;
+      description: string | null;
+      stargazers_count: number;
+      forks_count: number;
+      open_issues_count: number;
+      language: string | null;
+    }>(`/repos/${repo}`),
+    getRepoStats(repo),
+  ]);
+
+  return {
+    ...repoData.data,
+    openPullRequests: stats.openPullRequests,
+  };
+}
+
+// ── Pull request detail (for /pr command) ───────────────────────────
+
+export interface PullRequestDetail {
+  number: number;
+  title: string;
+  state: "open" | "closed";
+  merged: boolean;
+  html_url: string;
+  user: { login: string } | null;
+  draft: boolean;
+}
+
+export interface CombinedStatus {
+  state: "success" | "failure" | "pending" | "error";
+  total_count: number;
+}
+
+export interface CheckRun {
+  status: string;
+  conclusion: string | null;
+}
+
+export async function getPullRequestDetail(
+  repo: string,
+  number: number,
+): Promise<PullRequestDetail> {
+  const { data } = await ghFetch<PullRequestDetail>(
+    `/repos/${repo}/pulls/${number}`,
+  );
+  return data;
+}
+
+export async function getCommitStatuses(
+  repo: string,
+  ref: string,
+): Promise<CombinedStatus> {
+  try {
+    const { data } = await ghFetch<CombinedStatus>(
+      `/repos/${repo}/commits/${ref}/status`,
+    );
+    return data;
+  } catch {
+    return { state: "pending", total_count: 0 };
+  }
+}
+
+export async function getCheckRunsForRef(
+  repo: string,
+  ref: string,
+): Promise<CheckRun[]> {
+  try {
+    const { data } = await ghFetch<{ check_runs: CheckRun[] }>(
+      `/repos/${repo}/commits/${ref}/check-runs`,
+    );
+    return data.check_runs ?? [];
+  } catch {
+    return [];
+  }
+}

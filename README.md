@@ -208,6 +208,23 @@ regardless of any `labels` key on those entries.
 - Suppressed events are logged at `debug` level so you can diagnose
   misconfigured allowlists.
 
+## On-Demand Commands
+
+The bot supports slash commands for querying GitHub state:
+
+- **`/repo <name>`** — fetch a summary for one of the tracked repos:
+  stars, forks, open issues, and open PR counts.
+- **`/pr <repo>#<number>`** — fetch PR status, review state, and CI
+  status for a specific pull request.
+- **`/repo`** (no arguments) — list all configured repo names.
+
+Repo names are resolved from the per-repo routing config
+(see "Optional: multi-repo routing" below). You can use the short
+name (e.g. `backend`) or the full name (e.g. `txio-labs/txio-backend`).
+
+Requires `GITHUB_TOKEN` with `contents:read` and `pull_requests:read`
+scope (already needed for merge-conflict detection).
+
 ## Run
 
 ```
