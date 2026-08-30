@@ -1,17 +1,14 @@
 # txio-telegram-bot
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT) [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](http://makeapullrequest.com)
+[![CI](https://github.com/txio-labs/txio-telegram-bot/actions/workflows/ci.yml/badge.svg)](https://github.com/txio-labs/txio-telegram-bot/actions/workflows/ci.yml) [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT) [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](http://makeapullrequest.com)
 
 Ops bot for the Txio team.
 
 - Listens for GitHub webhook events (issues, pull requests, CI runs,
-  deployments, branch create/delete, force-pushes to the default branch,
-  Dependabot security alerts) and posts a formatted notification into the
-  Telegram group. Each event type can optionally be routed to its own forum
-  topic, and pull requests / security alerts can be routed to a private DM
-  instead of the group.
-- Dependabot PRs labeled `dependencies` are formatted as a distinct
-  "Dependency update" notification instead of a standard PR notification.
+  deployments, branch create/delete, force-pushes to the default branch)
+  and posts a formatted notification into the Telegram group.
+  Each event type can optionally be routed to its own forum topic, and pull
+  requests can be routed to a private DM instead of the group.
 - Welcomes new members when they join the group.
 
 ## Notifications
@@ -52,6 +49,29 @@ quietly.
 - **Message size**: digests are capped below Telegram's 4096-character limit;
   overflow items are dropped and reported with a "…and N more" footer.
 
+### Weekly bus-factor reports
+
+The bot samples recent commit history and reports files whose commits are
+highly concentrated in one human author. The default schedule is Monday at
+09:00 UTC (`BUS_FACTOR_CRON=0 9 * * 1`). Reports contain at most five files per
+repository and use the same repo chat/topic routing as issue notifications.
+
+- `BUS_FACTOR_THRESHOLD_PERCENT` — minimum single-author concentration (default
+  `70`).
+- `BUS_FACTOR_MIN_COMMITS` — minimum non-bot commits touching a file (default
+  `5`); smaller histories are excluded as too weak to be meaningful.
+- `BUS_FACTOR_RECENT_COMMITS` — commits sampled per repository (default `30`).
+- `BUS_FACTOR_TOP_FILES` — maximum files shown per repository (default `5`).
+
+The data source is GitHub REST: one `GET /commits` request and one detail
+request per sampled commit (`GET /commits/{sha}`), requested sequentially per
+repository. This avoids local clone disk and authentication management, but a
+four-repository deployment sampling 30 commits can use about 124 authenticated
+API requests per weekly run. Set `GITHUB_TOKEN` for private repositories and
+predictable rate limits; unauthenticated requests are limited to 60 per hour.
+Bot-authored commits are ignored, and GitHub rename metadata is followed so
+moved files retain their history. API failures are logged per repository.
+
 ## Setup
 
 1. **Create the bot**: message [@BotFather](https://t.me/BotFather) on
@@ -70,7 +90,7 @@ quietly.
    `application/x-www-form-urlencoded` — you must change this), and a
    secret matching `GITHUB_WEBHOOK_SECRET`. Subscribe to: Issues, Issue
    comments, Pull requests, Workflow runs, Deployment statuses, Branches,
-   Dependabot alerts.
+   Releases.
 6. **(Optional) Set GITHUB_TOKEN**: for merge-conflict detection on private
    repos and to avoid rate limits on public repos, create a fine-grained
    personal access token (PAT) or GitHub App installation token with
@@ -87,8 +107,8 @@ routing to work.
 - **Topic ids**: open the topic, send a message, then check
   `getUpdates` for `"message_thread_id"` in that update. Set
   `TOPIC_THREAD_ISSUES` / `TOPIC_THREAD_CI` / `TOPIC_THREAD_DEPLOYS` /
-  `TOPIC_THREAD_BRANCHES` / `TOPIC_THREAD_SECURITY`. Unset ones fall back to
-  the group's General topic.
+  `TOPIC_THREAD_BRANCHES` / `TOPIC_THREAD_RELEASES`.
+  Unset ones fall back to the group's General topic.
 - **PR private DM**: DM the bot directly, send it any message, then check
   `getUpdates` for that message's `"chat":{"id": ...}` (your personal chat
   id, a positive number). Set `PULL_REQUEST_CHAT_ID` — pull request
@@ -126,7 +146,7 @@ notifications to a distinct chat or forum topic. Create a JSON file
     "ci": 103,
     "deploys": 104,
     "branches": 110,
-    "security": 112
+    "releases": 112
   },
   "txio-labs/txio-cli": {
     "chatId": "-1001234567890",
@@ -139,11 +159,9 @@ Each key is a `repository.full_name` (case-insensitive). The value is an
 object with:
 
 - `chatId` (optional) — overrides `TELEGRAM_CHAT_ID` for that repo.
-- `issues` / `pullRequests` / `ci` / `deploys` / `branches` / `security`
-  (optional) — overrides the corresponding `TOPIC_THREAD_*` for that event
-  type in that chat. Each can be either a plain thread ID number (e.g.
-  `102`) or an object with `threadId` and an optional `labels` allowlist
-  (see below).
+- `issues` / `pullRequests` / `ci` / `deploys` / `branches` / `releases` (optional) —
+  overrides the corresponding `TOPIC_THREAD_*` for that event type in
+  that chat.
 
 Repos not present in the file, or event types left blank, fall back to the
 defaults (`TELEGRAM_CHAT_ID` and `TOPIC_THREAD_*` env vars).

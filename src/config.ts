@@ -22,34 +22,34 @@ function optionalPositiveInt(name: string, fallback: number): number {
   return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
 }
 
+function optionalPercent(name: string, fallback: number): number {
+  const raw = process.env[name];
+  if (raw === undefined || raw === "") return fallback;
+  const parsed = Number(raw);
+  return Number.isInteger(parsed) && parsed >= 0 && parsed <= 100 ? parsed : fallback;
+}
+
 function optionalString(name: string): string | undefined {
   return process.env[name];
 }
 
 // ── Repo routing ──────────────────────────────────────────────────────
 
-export type EventCategory =
-  | "issues"
-  | "pullRequests"
-  | "ci"
-  | "deploys"
-  | "branches"
-  | "security";
+export type EventCategory = "issues" | "pullRequests" | "ci" | "deploys" | "branches" | "releases";
 
 export type EventCategoryConfig = {
   threadId?: number;
-  /** Optional label allowlist. When set, only events with at least one matching label are forwarded. Matching is case-sensitive. */
   labels?: string[];
 };
 
 export type RepoRoute = {
   chatId?: string | number;
-  issues?: number | EventCategoryConfig;
-  pullRequests?: number | EventCategoryConfig;
-  ci?: number | EventCategoryConfig;
-  deploys?: number | EventCategoryConfig;
-  branches?: number | EventCategoryConfig;
-  security?: number | EventCategoryConfig;
+  issues?: number;
+  pullRequests?: number;
+  ci?: number;
+  deploys?: number;
+  branches?: number;
+  releases?: number;
 };
 
 export type RepoRoutingConfig = Record<string, RepoRoute>;
@@ -133,7 +133,7 @@ function loadRepoRoutingConfig(): RepoRoutingConfig {
       );
     }
     for (const key of Object.keys(route as Record<string, unknown>)) {
-      const allowed = ["chatId", "issues", "pullRequests", "ci", "deploys", "branches", "security"];
+      const allowed = ["chatId", "issues", "pullRequests", "ci", "deploys", "branches", "releases"];
       if (!allowed.includes(key)) {
         throw new Error(
           `REPO_ROUTING_CONFIG_PATH "${configPath}": unknown key "${key}" in entry for "${repo}"`,
@@ -245,15 +245,15 @@ export const config = {
     ci: optionalInt("TOPIC_THREAD_CI"),
     deploys: optionalInt("TOPIC_THREAD_DEPLOYS"),
     branches: optionalInt("TOPIC_THREAD_BRANCHES"),
-    security: optionalInt("TOPIC_THREAD_SECURITY"),
+    releases: optionalInt("TOPIC_THREAD_RELEASES"),
   },
   prOpened: {
-    channel: process.env.PR_OPENED_CHANNEL ?? "main_chat",
-    format: process.env.PR_OPENED_FORMAT ?? "markdown_summary",
+    channel: (process.env.PR_OPENED_CHANNEL as DeliveryChannel) ?? "main_chat",
+    format: (process.env.PR_OPENED_FORMAT as DeliveryFormat) ?? "markdown_summary",
   },
   prClosed: {
-    channel: process.env.PR_CLOSED_CHANNEL ?? "main_chat",
-    format: process.env.PR_CLOSED_FORMAT ?? "markdown_summary",
+    channel: (process.env.PR_CLOSED_CHANNEL as DeliveryChannel) ?? "main_chat",
+    format: (process.env.PR_CLOSED_FORMAT as DeliveryFormat) ?? "markdown_summary",
   },
   prChangesRequested: {
     channel: (process.env.PR_CHANGES_REQUESTED_CHANNEL as DeliveryChannel) ?? "main_chat",
@@ -279,6 +279,14 @@ export const config = {
     // An open PR/issue counts as stale when its updated_at is older than this.
     thresholdDays: optionalPositiveInt("STALE_THRESHOLD_DAYS", 7),
     // Repos to query; derived from REPO_ROUTING_CONFIG_PATH (or STALE_REPO_NAMES).
+    repos: trackedRepos,
+  },
+  busFactor: {
+    cron: process.env.BUS_FACTOR_CRON ?? "0 9 * * 1",
+    thresholdPercent: optionalPercent("BUS_FACTOR_THRESHOLD_PERCENT", 70),
+    minCommits: optionalPositiveInt("BUS_FACTOR_MIN_COMMITS", 5),
+    recentCommits: optionalPositiveInt("BUS_FACTOR_RECENT_COMMITS", 30),
+    topFiles: optionalPositiveInt("BUS_FACTOR_TOP_FILES", 5),
     repos: trackedRepos,
   },
 };

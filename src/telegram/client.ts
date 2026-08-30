@@ -1,12 +1,32 @@
 import { Bot } from "grammy";
+import { autoRetry } from "@grammyjs/auto-retry";
 import { config } from "../config.js";
 import { escapeHtml } from "../utils/html.js";
+import { buildCuratedIssuesReply } from "./issueCommands.js";
 
 export const bot = new Bot(config.telegramBotToken);
+
+bot.api.config.use(
+  autoRetry({
+    maxRetryAttempts: 5,
+    maxDelaySeconds: 30,
+  }),
+);
 
 // Catch-all error handler to prevent unhandled promise rejections from crashing the process
 bot.catch((err) => {
   console.error("Telegram bot error caught by bot.catch():", err);
+});
+
+
+bot.command("goodfirstissue", async (ctx) => {
+  const reply = await buildCuratedIssuesReply("goodfirstissue", ctx.match);
+  await ctx.reply(reply, { parse_mode: "HTML", link_preview_options: { is_disabled: true } });
+});
+
+bot.hears(/^\/help-wanted(?:@\w+)?(?:\s+(.+))?$/i, async (ctx) => {
+  const reply = await buildCuratedIssuesReply("help-wanted", ctx.match?.[1]);
+  await ctx.reply(reply, { parse_mode: "HTML", link_preview_options: { is_disabled: true } });
 });
 
 bot.on("message:new_chat_members", async (ctx) => {

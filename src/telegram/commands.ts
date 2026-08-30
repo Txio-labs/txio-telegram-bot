@@ -1,13 +1,7 @@
 import type { Bot, Context } from "grammy";
 import { config } from "../config.js";
 import { escapeHtml } from "../utils/html.js";
-import {
-  GitHubApiError,
-  getRepoStats,
-  listOpenIssuesByLabel,
-  type LabeledIssue,
-  type RepoStats,
-} from "../github/api.js";
+import { GitHubApiError, getRepoStats, type RepoStats } from "../github/api.js";
 
 export interface CommandInfo {
   name: string;
@@ -65,17 +59,6 @@ export function resolveRepo(arg: string | undefined): string | null {
     return candidate.includes("/") ? candidate : `txio-labs/${candidate}`;
   }
   return config.repos[0] ?? null;
-}
-
-const ISSUE_LIST_CAP = 8;
-
-export function formatIssueList(label: string, repo: string, issues: LabeledIssue[]): string {
-  if (issues.length === 0) {
-    return `No open issues currently labeled <b>${escapeHtml(label)}</b> in ${escapeHtml(repo)}.`;
-  }
-  const lines = issues.map((i) => `• <a href="${i.html_url}">#${i.number}</a> ${escapeHtml(i.title)}`);
-  const more = `… <a href="https://github.com/${repo}/issues?q=is%3Aopen+label%3A${encodeURIComponent(label)}">see all on GitHub</a>`;
-  return [`<b>Open issues labeled ${escapeHtml(label)}</b> in ${escapeHtml(repo)}:`, ...lines, more].join("\n");
 }
 
 export function formatStats(repo: string, stats: RepoStats): string {
@@ -144,15 +127,7 @@ export function registerCommands(bot: Bot): void {
     });
   });
 
-  const labelCommand = (label: string) => async (ctx: Context) => {
-    await safeReply(ctx, async () => {
-      const repo = resolveRepo(commandArg(ctx));
-      if (!repo) return "No tracked repos configured.";
-      const issues = await listOpenIssuesByLabel(repo, label, ISSUE_LIST_CAP);
-      return formatIssueList(label, repo, issues);
-    });
-  };
-
-  bot.command("goodfirstissue", labelCommand("good-first-issue"));
-  bot.command("help-wanted", labelCommand("help-wanted"));
+  // /goodfirstissue and /help-wanted are registered in telegram/client.ts
+  // (see issueCommands.ts) — kept in commandRegistry above so they still
+  // appear in the /help menu.
 }

@@ -12,7 +12,6 @@ vi.hoisted(() => {
 import {
   buildHelpText,
   commandRegistry,
-  formatIssueList,
   formatStats,
   resolveRepo,
 } from "./commands.js";
@@ -61,24 +60,6 @@ describe("resolveRepo", () => {
   it("returns null when nothing is tracked", () => {
     if (config.repos.length > 0) return; // only meaningful with empty routing
     expect(resolveRepo(undefined)).toBeNull();
-  });
-});
-
-describe("formatIssueList (#43)", () => {
-  it("returns a clear message instead of a blank reply on empty results", () => {
-    const text = formatIssueList("good-first-issue", "txio-labs/txio-cli", []);
-    expect(text).toContain("No open issues");
-    expect(text).toContain("good-first-issue");
-  });
-
-  it("renders capped linked entries with titles escaped", () => {
-    const text = formatIssueList("help-wanted", "txio-labs/txio-cli", [
-      { number: 7, title: "<script>alert(1)</script>", html_url: "https://github.com/x/y/issues/7" },
-    ]);
-    expect(text).toContain("#7");
-    expect(text).toContain("&lt;script&gt;");
-    expect(text).not.toContain("<script>");
-    expect(text).toContain("see all on GitHub");
   });
 });
 

@@ -7,6 +7,7 @@ vi.hoisted(() => {
   process.env.GITHUB_WEBHOOK_SECRET = "fake-github-secret";
   process.env.PUBLIC_URL = "https://example.com";
   process.env.STALE_REMINDER_CRON = "0 9 * * *";
+  process.env.BUS_FACTOR_CRON = "0 9 * * 1";
   process.env.STALE_THRESHOLD_DAYS = "7";
   process.env.STALE_REPO_NAMES = "txio-labs/txio-backend,txio-labs/txio-cli";
 });
@@ -72,7 +73,7 @@ describe("startScheduler", () => {
     startScheduler();
     startScheduler();
 
-    expect(mockSchedule).toHaveBeenCalledTimes(1);
+    expect(mockSchedule).toHaveBeenCalledTimes(2);
   });
 
   it("logs and skips registration for an invalid cron expression", () => {
@@ -81,7 +82,7 @@ describe("startScheduler", () => {
 
     startScheduler();
 
-    expect(mockSchedule).not.toHaveBeenCalled();
+    expect(mockSchedule).toHaveBeenCalledTimes(1);
     expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining("Invalid STALE_REMINDER_CRON"));
     errorSpy.mockRestore();
   });
@@ -91,7 +92,7 @@ describe("startScheduler", () => {
     stopScheduler();
     startScheduler();
 
-    expect(mockSchedule).toHaveBeenCalledTimes(2);
+    expect(mockSchedule).toHaveBeenCalledTimes(4);
   });
 });
 

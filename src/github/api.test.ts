@@ -31,38 +31,6 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-describe("listOpenIssuesByLabel (#43)", () => {
-  it("filters pull requests out of the issues feed", async () => {
-    const spy = fetchOnce([
-      { number: 1, title: "real issue", html_url: "https://x/1" },
-      { number: 2, title: "a PR", html_url: "https://x/2", pull_request: { url: "https://x/pr/2" } },
-    ]);
-    const issues = await listOpenIssuesByLabel("txio-labs/txio-cli", "good-first-issue");
-    expect(issues).toEqual([{ number: 1, title: "real issue", html_url: "https://x/1" }]);
-    const called = spy.mock.calls[0]?.[0] as string;
-    expect(called).toContain("labels=good-first-issue");
-    expect(called).toContain("state=open");
-  });
-
-  it("caps the returned list length", async () => {
-    const many = Array.from({ length: 20 }, (_, i) => ({
-      number: i + 1,
-      title: `issue ${i}`,
-      html_url: `https://x/${i}`,
-    }));
-    fetchOnce(many);
-    const issues = await listOpenIssuesByLabel("txio-labs/txio-cli", "help-wanted", 8);
-    expect(issues.length).toBe(8);
-  });
-
-  it("raises GitHubApiError on HTTP failure", async () => {
-    fetchOnce({ message: "Not Found" }, { status: 404 });
-    await expect(listOpenIssuesByLabel("txio-labs/nope", "good-first-issue")).rejects.toBeInstanceOf(
-      GitHubApiError,
-    );
-  });
-});
-
 describe("getRepoStats (#44)", () => {
   it("aggregates repo, PR, and contributor counts", async () => {
     const spy = vi
@@ -102,6 +70,11 @@ describe("getRepoStats (#44)", () => {
     const stats = await getRepoStats("txio-labs/empty");
     expect(stats.contributors).toBe(0);
   });
+
+  it("raises GitHubApiError on HTTP failure", async () => {
+    fetchOnce({ message: "Not Found" }, { status: 404 });
+    await expect(getRepoStats("txio-labs/nope")).rejects.toBeInstanceOf(GitHubApiError);
+  });
 });
 
 describe("lastPageFromLinkHeader", () => {
@@ -113,5 +86,33 @@ describe("lastPageFromLinkHeader", () => {
 
   it("returns null when there is no Link header", () => {
     expect(lastPageFromLinkHeader(null)).toBeNull();
+  });
+});
+
+describe("listOpenIssuesByLabel", () => {
+  it("queries open issues by label and filters pull requests", async () => {
+    const fetchFn = vi.fn(async () => ({
+      ok: true,
+      json: async () => [
+        { number: 1, title: "Issue", html_url: "https://github.com/o/r/issues/1" },
+        { number: 2, title: "PR", html_url: "https://github.com/o/r/pull/2", pull_request: {} },
+      ],
+    })) as unknown as typeof fetch;
+
+    const issues = await listOpenIssuesByLabel("o/r", "good-first-issue", { fetchFn, token: "token", perPage: 11 });
+
+    expect(fetchFn).toHaveBeenCalledWith(
+      "https://api.github.com/repos/o/r/issues?state=open&labels=good-first-issue&per_page=11",
+      { headers: { Accept: "application/vnd.github+json", Authorization: "Bearer token" } },
+    );
+    expect(issues).toEqual([{ number: 1, title: "Issue", htmlUrl: "https://github.com/o/r/issues/1" }]);
+  });
+
+  it("throws when GitHub responds with an error", async () => {
+    const fetchFn = vi.fn(async () => ({ ok: false, status: 404, statusText: "Not Found" })) as unknown as typeof fetch;
+
+    await expect(listOpenIssuesByLabel("o/r", "help-wanted", { fetchFn })).rejects.toThrow(
+      "GitHub API returned 404 Not Found for o/r",
+    );
   });
 });

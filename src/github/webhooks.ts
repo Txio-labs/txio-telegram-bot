@@ -1,5 +1,5 @@
 import { Webhooks } from "@octokit/webhooks";
-import { config, resolveDestination, labelMatchesAllowlist, getDeliveryConfig, type EventCategory } from "../config.js";
+import { config, getDeliveryConfig, resolveDestination, labelMatchesAllowlist, type EventCategory } from "../config.js";
 import { prChangesRequestedNotifier } from "../notifications/prChangesRequested.js";
 import { notifyChannel, sendMessage } from "../telegram/client.js";
 import {
@@ -13,7 +13,7 @@ import {
   formatMergeConflictEvent,
   formatPullRequestClosedEvent,
   formatPullRequestOpenedEvent,
-  formatSecurityAlertEvent,
+  formatReleaseEvent,
   formatWorkflowRunEvent,
 } from "./formatters.js";
 
@@ -54,6 +54,14 @@ export const seenDeliveries = new Set<string>();
 // conflict on the same PR to trigger a new notification.
 const conflictedPullRequests = new Set<string>();
 
+export function clearConflictState(repoFullName: string, prNumber: number): void {
+  conflictedPullRequests.delete(`${repoFullName}#${prNumber}`);
+}
+
+export function hasConflictState(repoFullName: string, prNumber: number): boolean {
+  return conflictedPullRequests.has(`${repoFullName}#${prNumber}`);
+}
+
 export function isDuplicateDelivery(id: string | undefined): boolean {
   if (!id) return false;
   if (seenDeliveries.has(id)) {
@@ -69,6 +77,8 @@ export function isDuplicateDelivery(id: string | undefined): boolean {
 
 webhooks.on(["issues.opened", "issues.closed", "issues.reopened"], async (event) => {
   if (isDuplicateDelivery(event.id)) return;
+  const { format } = getDeliveryConfig("issues");
+  const formatted = formatIssueEvent(event, format);
   const dest = resolveDestination(
     event.payload.repository?.full_name,
     "issues",
@@ -86,12 +96,14 @@ webhooks.on(["issues.opened", "issues.closed", "issues.reopened"], async (event)
     });
     return;
   }
-  const { text, parseMode, replyMarkup } = formatIssueEvent(event, getDeliveryConfig("issues").format);
-  await sendMessage(dest.chatId, text, dest.threadId, { parseMode, replyMarkup });
+  await sendMessage(dest.chatId, formatted.text, dest.threadId, { parseMode: formatted.parseMode, replyMarkup: formatted.replyMarkup });
 });
 
 webhooks.on(["pull_request.closed", "pull_request.reopened"], async (event) => {
   if (isDuplicateDelivery(event.id)) return;
+  if (event.payload.action === "closed") {
+    clearConflictState(event.payload.repository.full_name, event.payload.pull_request.number);
+  }
   const { channel, format } = config.prClosed;
   const { text, parseMode, replyMarkup } = formatPullRequestClosedEvent(event, format);
 
@@ -296,9 +308,25 @@ webhooks.on("pull_request_review.submitted", async (event) => {
   });
 });
 
+webhooks.on("issue_comment.created", async (event) => {
+  if (isDuplicateDelivery(event.id)) return;
+  const { issue, comment, repository } = event.payload;
+  // Skip automation (e.g. other bots commenting) to avoid notification loops.
+  if (comment.user?.type === "Bot") return;
+  const isPr = Boolean(issue.pull_request);
+  const { chatId, threadId } = resolveDestination(
+    repository?.full_name,
+    isPr ? "pullRequests" : "issues",
+    config.telegramChatId,
+    isPr ? config.topicThreads.pullRequests : config.topicThreads.issues,
+  );
+  await sendMessage(chatId, formatCommentEvent(event), threadId);
+});
+
 webhooks.on("workflow_run.completed", async (event) => {
   if (isDuplicateDelivery(event.id)) return;
-  const message = formatWorkflowRunEvent(event);
+  const { format } = getDeliveryConfig("workflow_run");
+  const message = formatWorkflowRunEvent(event, format);
 
   if (message) {
     const { chatId, threadId } = resolveDestination(
@@ -307,7 +335,7 @@ webhooks.on("workflow_run.completed", async (event) => {
       config.telegramChatId,
       config.topicThreads.ci,
     );
-    await sendMessage(chatId, message, threadId);
+    await sendMessage(chatId, message.text, threadId, { parseMode: message.parseMode, replyMarkup: message.replyMarkup });
   }
 });
 
@@ -378,26 +406,18 @@ webhooks.on("push", async (event) => {
   await sendMessage(chatId, formatForcePushEvent(event), threadId);
 });
 
-webhooks.on("dependabot_alert.created", async (event) => {
+webhooks.on("release.published", async (event) => {
   if (isDuplicateDelivery(event.id)) return;
-  const { channel, format } = config.securityAlert;
-  const { text, parseMode, replyMarkup } = formatSecurityAlertEvent(event, format);
-
-  const repoFullName = event.payload.repository?.full_name;
-  let targetChatId: string | number = config.telegramChatId;
-  let threadId: number | undefined;
-
-  if (channel === "topic_thread") {
-    const dest = resolveDestination(repoFullName, "security", config.telegramChatId, config.topicThreads.security);
-    targetChatId = dest.chatId;
-    threadId = dest.threadId;
-  } else if (channel === "dm") {
-    if (config.securityAlertChatId) {
-      targetChatId = config.securityAlertChatId;
-    }
+  const message = formatReleaseEvent(event);
+  if (message) {
+    const { chatId, threadId } = resolveDestination(
+      event.payload.repository?.full_name,
+      "releases",
+      config.telegramChatId,
+      config.topicThreads.releases,
+    );
+    await sendMessage(chatId, message, threadId);
   }
-
-  await sendMessage(targetChatId, text, threadId, { parseMode, replyMarkup });
 });
 
 webhooks.onError((error) => {

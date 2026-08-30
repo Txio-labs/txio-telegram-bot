@@ -4,6 +4,8 @@ import {
   isMergeConflicted,
   seenDeliveries,
   webhooks,
+  clearConflictState,
+  hasConflictState,
 } from "./webhooks.js";
 import {
   formatDependencyUpdateEvent,
@@ -511,5 +513,129 @@ describe("isDuplicateDelivery", () => {
     expect(isDuplicateDelivery("deliv-1")).toBe(true);
     expect(isDuplicateDelivery("deliv-2")).toBe(false);
     expect(isDuplicateDelivery("deliv-2")).toBe(true);
+  });
+});
+
+describe("merge-conflict notification dedup", () => {
+  beforeEach(() => {
+    clearConflictState("owner/repo", 42);
+    clearConflictState("owner/repo", 43);
+    mockSendMessage.mockClear();
+    mockResolveDestination.mockClear();
+    mockResolveDestination.mockReturnValue({ ...DEFAULT_DESTINATION });
+    seenDeliveries.clear();
+  });
+
+  it("sends alert on first conflict, suppresses repeat on same PR", async () => {
+    // First conflict → alert sent.
+    await webhooks.receive({
+      id: "mc-1",
+      name: "pull_request",
+      payload: {
+        action: "synchronize",
+        repository: { full_name: "owner/repo", html_url: "https://github.com/owner/repo" },
+        pull_request: { number: 42, title: "WIP", html_url: "https://github.com/owner/repo/pull/42", mergeable: false, labels: [] },
+      } as any,
+    });
+    expect(mockSendMessage).toHaveBeenCalledOnce();
+    expect(hasConflictState("owner/repo", 42)).toBe(true);
+
+    // Second synchronize, same PR, still conflicted → suppressed.
+    await webhooks.receive({
+      id: "mc-2",
+      name: "pull_request",
+      payload: {
+        action: "synchronize",
+        repository: { full_name: "owner/repo", html_url: "https://github.com/owner/repo" },
+        pull_request: { number: 42, title: "WIP", html_url: "https://github.com/owner/repo/pull/42", mergeable: false, labels: [] },
+      } as any,
+    });
+    expect(mockSendMessage).toHaveBeenCalledOnce(); // still 1, not 2
+  });
+
+  it("re-alerts after conflict resolved then reintroduced", async () => {
+    // First conflict.
+    await webhooks.receive({
+      id: "mc-3",
+      name: "pull_request",
+      payload: {
+        action: "synchronize",
+        repository: { full_name: "owner/repo", html_url: "https://github.com/owner/repo" },
+        pull_request: { number: 42, title: "WIP", html_url: "https://github.com/owner/repo/pull/42", mergeable: false, labels: [] },
+      } as any,
+    });
+    expect(mockSendMessage).toHaveBeenCalledOnce();
+
+    // Conflict resolved → state cleared.
+    await webhooks.receive({
+      id: "mc-4",
+      name: "pull_request",
+      payload: {
+        action: "synchronize",
+        repository: { full_name: "owner/repo", html_url: "https://github.com/owner/repo" },
+        pull_request: { number: 42, title: "WIP", html_url: "https://github.com/owner/repo/pull/42", mergeable: true, labels: [] },
+      } as any,
+    });
+    expect(hasConflictState("owner/repo", 42)).toBe(false);
+
+    // New conflict → alert sent again.
+    await webhooks.receive({
+      id: "mc-5",
+      name: "pull_request",
+      payload: {
+        action: "synchronize",
+        repository: { full_name: "owner/repo", html_url: "https://github.com/owner/repo" },
+        pull_request: { number: 42, title: "WIP", html_url: "https://github.com/owner/repo/pull/42", mergeable: false, labels: [] },
+      } as any,
+    });
+    expect(mockSendMessage).toHaveBeenCalledTimes(2);
+  });
+
+  it("tracks different PRs independently", async () => {
+    await webhooks.receive({
+      id: "mc-6",
+      name: "pull_request",
+      payload: {
+        action: "synchronize",
+        repository: { full_name: "owner/repo", html_url: "https://github.com/owner/repo" },
+        pull_request: { number: 42, title: "WIP", html_url: "https://github.com/owner/repo/pull/42", mergeable: false, labels: [] },
+      } as any,
+    });
+    await webhooks.receive({
+      id: "mc-7",
+      name: "pull_request",
+      payload: {
+        action: "synchronize",
+        repository: { full_name: "owner/repo", html_url: "https://github.com/owner/repo" },
+        pull_request: { number: 43, title: "Other", html_url: "https://github.com/owner/repo/pull/43", mergeable: false, labels: [] },
+      } as any,
+    });
+    expect(mockSendMessage).toHaveBeenCalledTimes(2);
+    expect(hasConflictState("owner/repo", 42)).toBe(true);
+    expect(hasConflictState("owner/repo", 43)).toBe(true);
+  });
+
+  it("clears state when PR is closed", async () => {
+    await webhooks.receive({
+      id: "mc-8",
+      name: "pull_request",
+      payload: {
+        action: "synchronize",
+        repository: { full_name: "owner/repo", html_url: "https://github.com/owner/repo" },
+        pull_request: { number: 42, title: "WIP", html_url: "https://github.com/owner/repo/pull/42", mergeable: false, labels: [] },
+      } as any,
+    });
+    expect(hasConflictState("owner/repo", 42)).toBe(true);
+
+    await webhooks.receive({
+      id: "mc-9",
+      name: "pull_request",
+      payload: {
+        action: "closed",
+        repository: { full_name: "owner/repo", html_url: "https://github.com/owner/repo" },
+        pull_request: { number: 42, title: "WIP", html_url: "https://github.com/owner/repo/pull/42", labels: [] },
+      } as any,
+    });
+    expect(hasConflictState("owner/repo", 42)).toBe(false);
   });
 });
