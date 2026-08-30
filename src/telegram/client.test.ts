@@ -30,6 +30,8 @@ vi.mock("grammy", async (importOriginal) => {
     api = { sendMessage: mockSendMessage, config: { use: mockUse } };
     catch = vi.fn();
     on = vi.fn();
+    command = vi.fn();
+    hears = vi.fn();
     constructor(_token: string) {}
   }
   return { ...actual, Bot: MockBot };

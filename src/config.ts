@@ -151,6 +151,35 @@ function loadRepoRoutingConfig(): RepoRoutingConfig {
 
 const repoRouting = loadRepoRoutingConfig();
 
+/**
+ * Resolve a short repo name (e.g. "backend") to a full name (e.g. "txio-labs/txio-backend").
+ * Matches against the last segment of each configured repo full name.
+ * Case-insensitive.
+ * Returns undefined if no match or ambiguous.
+ */
+export function resolveRepoName(
+  shortName: string,
+  routing: RepoRoutingConfig = repoRouting,
+): string | undefined {
+  const lower = shortName.toLowerCase();
+  const matches = Object.keys(routing).filter((key) => {
+    const segments = key.split("/");
+    const nameSegment = segments[segments.length - 1]?.toLowerCase() ?? "";
+    // Match exact name segment, or suffix (e.g. "backend" matches "txio-backend")
+    return nameSegment === lower || nameSegment.endsWith(lower) || key.toLowerCase() === lower;
+  });
+  return matches.length === 1 ? matches[0] : undefined;
+}
+
+/**
+ * Get all configured repo full names for /repo auto-completion hints.
+ */
+export function getConfiguredRepos(
+  routing: RepoRoutingConfig = repoRouting,
+): string[] {
+  return Object.keys(routing);
+}
+
 // Repos the stale-reminder job monitors. Prefer the repos already mapped in
 // REPO_ROUTING_CONFIG_PATH; STALE_REPO_NAMES is the fallback when no routing
 // file is configured (e.g. a single-repo deployment).
