@@ -219,11 +219,13 @@ export function formatWorkflowRunEvent(
   if (format === undefined) return htmlText;
 
   if (format === "inline_buttons") {
-    const keyboard = new InlineKeyboard().url("View Logs", run.html_url);
-    return { text: htmlText, parseMode: "HTML", replyMarkup: keyboard };
+    // Keyboard variants need the FormattedMessage object shape; this
+    // formatter's callers (webhooks.ts) broadcast plain strings, so the
+    // logs link rides along as text instead.
+    return `${htmlText}\n${link(run.html_url, "View Logs")}`;
   }
 
-  return { text: htmlText, parseMode: "HTML" };
+  return htmlText;
 }
 
 export function formatDeploymentStatusEvent(

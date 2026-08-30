@@ -6,6 +6,7 @@ import {
   formatBranchCreatedEvent,
   formatBranchDeletedEvent,
   formatCommentEvent,
+  formatDependencyUpdateEvent,
   formatDeploymentStatusEvent,
   formatForcePushEvent,
   formatIssueEvent,
@@ -266,8 +267,12 @@ webhooks.on(
       return;
     }
 
-    const message = formatMergeConflictEvent(pr, repository, "markdown_summary");
-    await sendMessage(dest.chatId, message.text, dest.threadId, { parseMode: message.parseMode, replyMarkup: message.replyMarkup });
+    const { text, parseMode, replyMarkup } = formatMergeConflictEvent(
+      pr,
+      repository,
+      getDeliveryConfig("merge_conflict").format,
+    );
+    await sendMessage(dest.chatId, text, dest.threadId, { parseMode, replyMarkup });
   },
 );
 
@@ -337,8 +342,11 @@ webhooks.on("workflow_run.completed", async (event) => {
 webhooks.on("deployment_status.created", async (event) => {
   if (isDuplicateDelivery(event.id)) return;
 
-  const { format } = getDeliveryConfig("deployment_status");
-  const formatted = formatDeploymentStatusEvent(event, format);
+  const { text, parseMode, replyMarkup } = formatDeploymentStatusEvent(
+    event,
+    getDeliveryConfig("deploys").format,
+  );
+
   const { chatId, threadId } = resolveDestination(
     event.payload.repository?.full_name,
     "deploys",
@@ -346,7 +354,7 @@ webhooks.on("deployment_status.created", async (event) => {
     config.topicThreads.deploys,
   );
 
-  await sendMessage(chatId, formatted.text, threadId, { parseMode: formatted.parseMode, replyMarkup: formatted.replyMarkup });
+  await sendMessage(chatId, text, threadId, { parseMode, replyMarkup });
 });
 
 export function isBranchRef(refType: string | undefined): boolean {
