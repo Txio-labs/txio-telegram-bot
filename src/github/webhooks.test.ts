@@ -426,6 +426,7 @@ describe("pull_request.opened webhook branching", () => {
         },
         pull_request: {
           number: 123,
+          mergeable: true,
           title: "Bump dependencies",
           html_url: "https://github.com/txio-labs/txio/pull/123",
           user: { login: "dependabot[bot]" },
@@ -454,6 +455,7 @@ describe("pull_request.opened webhook branching", () => {
         },
         pull_request: {
           number: 124,
+          mergeable: true,
           title: "Add new feature",
           html_url: "https://github.com/txio-labs/txio/pull/124",
           user: { login: "human-dev" },
@@ -482,6 +484,7 @@ describe("pull_request.opened webhook branching", () => {
         },
         pull_request: {
           number: 125,
+          mergeable: true,
           title: "Bump rust dependencies",
           html_url: "https://github.com/txio-labs/txio/pull/125",
           user: { login: "dependabot[bot]" },
@@ -513,6 +516,12 @@ describe("isDuplicateDelivery", () => {
     expect(isDuplicateDelivery("deliv-1")).toBe(true);
     expect(isDuplicateDelivery("deliv-2")).toBe(false);
     expect(isDuplicateDelivery("deliv-2")).toBe(true);
+  });
+
+  it("tracks each handler scope separately, so handlers sharing an event all run", () => {
+    expect(isDuplicateDelivery("deliv-3")).toBe(false);
+    expect(isDuplicateDelivery("deliv-3", "merge-conflict")).toBe(false);
+    expect(isDuplicateDelivery("deliv-3", "merge-conflict")).toBe(true);
   });
 });
 

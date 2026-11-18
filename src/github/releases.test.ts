@@ -14,6 +14,16 @@ vi.mock("../telegram/client.js", () => ({
   sendMessage: vi.fn(),
 }));
 
+// The user-facing announcement (src/releases) is tested separately; here
+// only check that a product release reaches it, without network calls.
+const { mockAnnounceRelease } = vi.hoisted(() => ({
+  mockAnnounceRelease: vi.fn().mockResolvedValue({ status: "duplicate" }),
+}));
+vi.mock("../releases/announce.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../releases/announce.js")>()),
+  announceRelease: mockAnnounceRelease,
+}));
+
 import { webhooks } from "./webhooks.js";
 import { sendMessage } from "../telegram/client.js";
 import { formatReleaseEvent, COMMENT_PREVIEW_LENGTH } from "./formatters.js";
@@ -182,5 +192,21 @@ describe("release.published handler", () => {
     await webhooks.receive({ id: "dup-release", name: "release.published", payload } as unknown as EmitterWebhookEvent);
 
     expect(mockSendMessage).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("release.published user announcement", () => {
+  beforeEach(() => mockAnnounceRelease.mockClear());
+
+  it("hands product releases (txio-cli) to the announcer", async () => {
+    await receive("release", releasePayload());
+    expect(mockAnnounceRelease).toHaveBeenCalledOnce();
+    expect(mockAnnounceRelease.mock.calls[0][0]).toMatchObject({ id: "cli" });
+    expect(mockAnnounceRelease.mock.calls[0][1]).toBe("v1.2.0");
+  });
+
+  it("ignores repos that are not products", async () => {
+    await receive("release", { ...releasePayload(), repository: repository({ full_name: "txio-labs/txio-backend" }) });
+    expect(mockAnnounceRelease).not.toHaveBeenCalled();
   });
 });

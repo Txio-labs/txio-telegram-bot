@@ -6,18 +6,29 @@ import { webhooks } from "./github/webhooks.js";
 import { startScheduler } from "./scheduler.js";
 import { bot } from "./telegram/client.js";
 import { registerCommands } from "./telegram/commands.js";
+import { publishCommandMenu, registerProductCommands } from "./telegram/productCommands.js";
+import { startJobs, stopJobs } from "./jobs.js";
+import { announceReleaseHandler } from "./releases/endpoint.js";
+import { createBackendFromEnv, initStore } from "./store.js";
 
 const app = express();
 
 // Interactive command surface (/help, /stats, label queries, health).
 // Registered before the webhook callback starts serving updates.
 registerCommands(bot);
+registerProductCommands(bot);
+
+// Load persisted state before serving, so announcements are never repeated.
+await initStore(createBackendFromEnv());
 
 app.get("/healthz", (_req, res) => {
   res.status(200).send("ok");
 });
 
 app.use(createNodeMiddleware(webhooks, { path: config.githubWebhookPath }));
+
+// Called by a repo's release workflow once every installer is uploaded.
+app.post("/announce/release", express.json({ limit: "8kb" }), announceReleaseHandler);
 app.use(config.telegramWebhookPath, express.json());
 
 // Wire telegram webhook with secretToken authentication and resilient error handling
@@ -47,7 +58,9 @@ const server = app.listen(config.port, async () => {
   } catch (error) {
     console.error("Failed to register Telegram webhook:", error);
   }
+  await publishCommandMenu(bot);
   startScheduler();
+  startJobs();
 });
 
 const shutdownTimeoutMs = 10_000;
@@ -56,6 +69,7 @@ let shuttingDown = false;
 function shutdown(signal: NodeJS.Signals): void {
   if (shuttingDown) return;
   shuttingDown = true;
+  stopJobs();
 
   console.log(`${signal} received, starting graceful shutdown`);
 

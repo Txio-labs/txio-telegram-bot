@@ -14,6 +14,8 @@ WORKDIR /app
 COPY package*.json ./
 RUN npm ci --omit=dev && npm cache clean --force
 COPY --from=builder /app/dist ./dist
+# Writable directory for STATE_FILE (used when BOT_MONGODB_URI is unset).
+RUN mkdir -p /app/data && chown 10001:10001 /app/data
 
 USER 10001:10001
 

@@ -9,6 +9,11 @@ Ops bot for the Txio team.
   and posts a formatted notification into the Telegram group.
   Each event type can optionally be routed to its own forum topic, and pull
   requests can be routed to a private DM instead of the group.
+- Announces every Txio Desktop, CLI, SDK and Web release to an
+  announcements topic and to DM subscribers, and alerts the team when a
+  desktop release build fails.
+- Answers `/download`, `/latest`, `/status` and `/subscribe`.
+- Posts a weekly digest and thanks first-time contributors.
 - Welcomes new members when they join the group.
 
 ## Notifications
@@ -72,6 +77,92 @@ predictable rate limits; unauthenticated requests are limited to 60 per hour.
 Bot-authored commits are ignored, and GitHub rename metadata is followed so
 moved files retain their history. API failures are logged per repository.
 
+### Release announcements
+
+Every new version of a Txio product is posted once to the announcements chat
+(`ANNOUNCE_CHAT_ID`, default the group) and topic (`TOPIC_THREAD_ANNOUNCEMENTS`),
+then sent by DM to everyone subscribed to that product. A post includes a
+"What's new" list built from `feat:`, `fix:` and `perf:` commits since the
+previous version, plus download or install details.
+
+| Product | Repo | Announced when | Backup |
+| --- | --- | --- | --- |
+| Txio Desktop | txio-labs/txio-desktop | The `Release` workflow succeeds (every installer uploaded) | `POST /announce/release` from the workflow, and polling |
+| Txio CLI | txio-labs/txio-cli | A GitHub release is published | crates.io `txio` polling |
+| Txio SDK | txio-labs/txio-sdk | A GitHub release is published | npm `@txio/sdk` polling |
+| Txio Web | txio-labs/txio | A `Production` deployment succeeds and user-facing commits shipped | none |
+
+These user-facing posts are separate from the team-facing "Release
+published" notification, which still goes to `TOPIC_THREAD_RELEASES` for
+every repo.
+
+Each version is posted once, no matter how many triggers fire (the
+duplicate check is kept in the persistent state). Drafts and prereleases are
+skipped unless `ANNOUNCE_PRERELEASES=true`. With `ANNOUNCE_PIN=true` the bot
+pins the post; it needs the "Pin messages" admin right, and a failed pin
+never blocks the post.
+
+**Desktop workflow step.** The `announce` job in txio-desktop's `release.yml`
+calls `POST /announce/release` with `Authorization: Bearer $ANNOUNCE_TOKEN`
+and retries for about two minutes, which covers a cold start. It runs only
+when every platform built. In the desktop repo, set the Actions variable
+`TXIO_BOT_URL` (the bot's `PUBLIC_URL`) and the secret
+`TXIO_BOT_ANNOUNCE_TOKEN` (same value as `ANNOUNCE_TOKEN`).
+
+**Polling.** Every `ANNOUNCE_POLL_MINUTES` (default 15) and shortly after
+start, the bot checks each product's latest GitHub release and registry
+version, and announces anything the webhooks missed (for example while the
+bot was down). A desktop release is only announced by polling after its
+release workflow succeeded. The first poll on a fresh state records what
+already exists without posting.
+
+**Failed releases.** When the desktop `Release` workflow fails, the CI topic
+gets an alert naming the failed platform jobs, and saying whether a partial
+release is already public. Nothing is announced to users.
+
+**Custom products.** `ANNOUNCE_PRODUCTS_PATH` points to a JSON array that
+replaces the built-in list. Fields: `id`, `name`, `repo`, `trigger`
+(`workflow` | `release` | `deploy`), and optionally `workflow` (required for
+`workflow`), `environment` (required for `deploy`), `url`, `install`,
+`crate`, `npm`.
+
+### Commands
+
+| Command | Where | What it does |
+| --- | --- | --- |
+| `/download` | anywhere | Desktop installers for each platform |
+| `/latest` | anywhere | Current version of every product |
+| `/status` | anywhere | Txio API, web app, and one public mainnet node per chain (Aptos, Ethereum, Solana, Stellar, Sui), with latency. Results are cached for 30 s |
+| `/subscribe [product\|all]` | DM | Get release posts by DM; without an argument it shows buttons |
+| `/unsubscribe [product\|all]` | DM | Stop them |
+| `/subscriptions` | DM | List your subscriptions |
+
+In a group, the subscription commands reply with a link that opens a DM
+with the bot. Subscribers who block the bot are removed automatically.
+
+### Weekly digest and first-contribution shout-outs
+
+Every `WEEKLY_DIGEST_CRON` (default Monday 09:00 UTC) the bot posts one
+summary of the past 7 days: releases, merged PRs per repo, contributors, and
+first-time contributors. Quiet weeks post nothing. It covers the tracked
+repos (see stale reminders), or the product repos when none are set.
+
+When a first-time contributor's PR is merged, the bot thanks them in the
+group. Set `FIRST_CONTRIBUTOR_SHOUTOUT=false` to turn that off.
+
+### Persistent state and uptime
+
+Announced versions, subscriptions, the last web deploy and first-time
+contributors are stored in MongoDB when `BOT_MONGODB_URI` is set (one
+document in the `bot_state` collection of `BOT_MONGODB_DB`, default
+`txio_bot`), otherwise in `STATE_FILE` (default `data/bot-state.json`).
+Render's free disk is wiped on every deploy, so use MongoDB there, with a
+database separate from the Txio backend's.
+
+On Render the bot pings its own `/healthz` every 10 minutes so the free
+instance does not sleep (`KEEP_ALIVE_MINUTES`). An always-on free service
+uses about 730 of the workspace's 750 free instance hours per month.
+
 ## Setup
 
 1. **Create the bot**: message [@BotFather](https://t.me/BotFather) on
@@ -90,7 +181,8 @@ moved files retain their history. API failures are logged per repository.
    `application/x-www-form-urlencoded` — you must change this), and a
    secret matching `GITHUB_WEBHOOK_SECRET`. Subscribe to: Issues, Issue
    comments, Pull requests, Workflow runs, Deployment statuses, Branches,
-   Releases.
+   Releases, Dependabot alerts. An organization webhook covers every product
+   repo at once.
 6. **(Optional) Set GITHUB_TOKEN**: for merge-conflict detection on private
    repos and to avoid rate limits on public repos, create a fine-grained
    personal access token (PAT) or GitHub App installation token with

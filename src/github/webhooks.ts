@@ -1,6 +1,10 @@
 import { Webhooks } from "@octokit/webhooks";
 import { config, getDeliveryConfig, resolveDestination, labelMatchesAllowlist, type EventCategory } from "../config.js";
+import { isFirstContribution, recordFirstContribution } from "../digest.js";
 import { prChangesRequestedNotifier } from "../notifications/prChangesRequested.js";
+import { announceRelease, announceWebDeploy, productForRepo, resolveTagForRun } from "../releases/announce.js";
+import { alertReleaseFailure } from "../releases/failures.js";
+import type { WorkflowRun } from "../releases/github.js";
 import { notifyChannel, sendMessage } from "../telegram/client.js";
 import {
   formatBranchCreatedEvent,
@@ -63,16 +67,23 @@ export function hasConflictState(repoFullName: string, prNumber: number): boolea
   return conflictedPullRequests.has(`${repoFullName}#${prNumber}`);
 }
 
-export function isDuplicateDelivery(id: string | undefined): boolean {
+/**
+ * Returns true when this handler already processed this delivery (GitHub
+ * redelivery). `scope` names the handler: several handlers subscribe to the
+ * same event (e.g. `pull_request.opened`), and one handler marking a delivery
+ * as seen must not make the others skip it.
+ */
+export function isDuplicateDelivery(id: string | undefined, scope = "default"): boolean {
   if (!id) return false;
-  if (seenDeliveries.has(id)) {
+  const key = `${scope}:${id}`;
+  if (seenDeliveries.has(key)) {
     return true;
   }
   if (seenDeliveries.size >= MAX_DELIVERY_CACHE_SIZE) {
     const firstKey = seenDeliveries.values().next().value;
     if (firstKey) seenDeliveries.delete(firstKey);
   }
-  seenDeliveries.add(id);
+  seenDeliveries.add(key);
   return false;
 }
 
@@ -233,7 +244,7 @@ export async function isMergeConflicted(
 webhooks.on(
   ["pull_request.opened", "pull_request.synchronize", "pull_request.reopened"],
   async (event) => {
-    if (isDuplicateDelivery(event.id)) return;
+    if (isDuplicateDelivery(event.id, "merge-conflict")) return;
 
     const { pull_request: pr, repository } = event.payload;
     const prKey = `${repository.full_name}#${pr.number}`;
@@ -278,7 +289,7 @@ webhooks.on(
 );
 
 webhooks.on("pull_request.closed", async (event) => {
-  if (isDuplicateDelivery(event.id)) return;
+  if (isDuplicateDelivery(event.id, "conflict-cleanup")) return;
 
   const { pull_request: pr, repository } = event.payload;
   conflictedPullRequests.delete(`${repository.full_name}#${pr.number}`);
@@ -309,21 +320,6 @@ webhooks.on("pull_request_review.submitted", async (event) => {
   });
 });
 
-webhooks.on("issue_comment.created", async (event) => {
-  if (isDuplicateDelivery(event.id)) return;
-  const { issue, comment, repository } = event.payload;
-  // Skip automation (e.g. other bots commenting) to avoid notification loops.
-  if (comment.user?.type === "Bot") return;
-  const isPr = Boolean(issue.pull_request);
-  const { chatId, threadId } = resolveDestination(
-    repository?.full_name,
-    isPr ? "pullRequests" : "issues",
-    config.telegramChatId,
-    isPr ? config.topicThreads.pullRequests : config.topicThreads.issues,
-  );
-  await sendMessage(chatId, formatCommentEvent(event), threadId);
-});
-
 webhooks.on("workflow_run.completed", async (event) => {
   if (isDuplicateDelivery(event.id)) return;
   const { format } = getDeliveryConfig("workflow_run");
@@ -340,8 +336,80 @@ webhooks.on("workflow_run.completed", async (event) => {
   }
 });
 
+// A finished release workflow of a `workflow` product (txio-desktop) posts
+// the release to the announcements topic on success, or alerts the team in
+// the CI topic on failure. The release workflow also calls
+// POST /announce/release itself; each version is posted once.
+webhooks.on("workflow_run.completed", async (event) => {
+  if (isDuplicateDelivery(event.id, "release-announce")) return;
+  const { workflow_run: run, repository } = event.payload;
+  const product = productForRepo(repository?.full_name);
+  if (!product || product.trigger !== "workflow" || run.name !== product.workflow) return;
+
+  if (run.conclusion === "failure" || run.conclusion === "timed_out") {
+    await alertReleaseFailure(product, run as WorkflowRun);
+    return;
+  }
+  if (run.conclusion !== "success") return;
+
+  try {
+    const tag = await resolveTagForRun(product.repo, run);
+    if (!tag) {
+      console.warn(`[announce] ${product.repo} run ${run.id} finished but no matching release was found`);
+      return;
+    }
+    await announceRelease(product, tag, "workflow_run webhook");
+  } catch (error) {
+    // Release polling retries later; never fail the whole delivery.
+    console.error(`[announce] ${product.repo} run ${run.id} failed:`, error);
+  }
+});
+
+// `release` products (CLI, SDK) are announced to users as soon as the
+// release is published. The team-facing release post below is separate.
+webhooks.on("release.published", async (event) => {
+  if (isDuplicateDelivery(event.id, "release-announce")) return;
+  const product = productForRepo(event.payload.repository?.full_name);
+  if (!product || product.trigger !== "release") return;
+  const tag = event.payload.release.tag_name;
+  await announceRelease(product, tag, "release webhook").catch((error) =>
+    // Release polling retries later; never fail the whole delivery.
+    console.error(`[announce] ${product.repo}@${tag} failed:`, error),
+  );
+});
+
+// Merged PR from a first-time contributor: thank them in the group.
+webhooks.on("pull_request.closed", async (event) => {
+  if (isDuplicateDelivery(event.id, "first-contribution")) return;
+  const { pull_request: pr, repository } = event.payload;
+  if (!pr.merged || pr.user?.type === "Bot" || !isFirstContribution(pr.author_association)) return;
+  await recordFirstContribution(
+    {
+      login: pr.user?.login ?? "someone",
+      repo: repository.full_name,
+      number: pr.number,
+      url: pr.html_url,
+      at: pr.merged_at ?? new Date().toISOString(),
+    },
+    pr.title,
+  );
+});
+
 webhooks.on("deployment_status.created", async (event) => {
   if (isDuplicateDelivery(event.id)) return;
+
+  // A successful production deploy of a `deploy` product (the web app) is
+  // announced to users when it ships user-facing changes.
+  const deployProduct = productForRepo(event.payload.repository?.full_name);
+  if (
+    deployProduct?.trigger === "deploy" &&
+    event.payload.deployment_status.state === "success" &&
+    event.payload.deployment.environment.toLowerCase() === deployProduct.environment?.toLowerCase()
+  ) {
+    announceWebDeploy(deployProduct, event.payload.deployment.sha, "deployment webhook").catch((error) =>
+      console.error(`[announce] web deploy ${event.payload.deployment.sha} failed:`, error),
+    );
+  }
 
   const { text, parseMode, replyMarkup } = formatDeploymentStatusEvent(
     event,

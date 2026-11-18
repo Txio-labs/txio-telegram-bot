@@ -1,4 +1,5 @@
 import "dotenv/config";
+import { loadProducts, type Product } from "./products.js";
 import { readFileSync } from "node:fs";
 import type { DeliveryChannel, DeliveryFormat, EventDeliveryConfig } from "./notifications/types.js";
 
@@ -27,6 +28,13 @@ function optionalPercent(name: string, fallback: number): number {
   if (raw === undefined || raw === "") return fallback;
   const parsed = Number(raw);
   return Number.isInteger(parsed) && parsed >= 0 && parsed <= 100 ? parsed : fallback;
+}
+
+function optionalNonNegativeInt(name: string, fallback: number): number {
+  const raw = process.env[name];
+  if (raw === undefined || raw === "") return fallback;
+  const parsed = Number(raw);
+  return Number.isInteger(parsed) && parsed >= 0 ? parsed : fallback;
 }
 
 function optionalString(name: string): string | undefined {
@@ -319,6 +327,49 @@ export const config = {
     topFiles: optionalPositiveInt("BUS_FACTOR_TOP_FILES", 5),
     repos: trackedRepos,
   },
+  // Release announcements (desktop, CLI, SDK, web) posted to an
+  // announcements chat or topic, and to users who subscribed by DM.
+  announce: {
+    products: loadProducts(),
+    // Defaults to the main group; set to a channel id (e.g. -100…) or @username.
+    chatId: (process.env.ANNOUNCE_CHAT_ID || process.env.TELEGRAM_CHAT_ID) as string | number,
+    threadId: optionalInt("TOPIC_THREAD_ANNOUNCEMENTS"),
+    // Shared secret for POST /announce/release. Unset disables the endpoint.
+    token: optionalString("ANNOUNCE_TOKEN") || undefined,
+    pin: process.env.ANNOUNCE_PIN === "true",
+    includePrereleases: process.env.ANNOUNCE_PRERELEASES === "true",
+    // How often to check GitHub releases and crates.io/npm for versions the
+    // webhooks missed. 0 disables.
+    pollMinutes: optionalNonNegativeInt("ANNOUNCE_POLL_MINUTES", 15),
+  } as AnnounceConfig | undefined,
+  weeklyDigest: {
+    // Default: Monday 09:00 UTC. Empty or invalid disables it.
+    cron: process.env.WEEKLY_DIGEST_CRON ?? "0 9 * * 1",
+    chatId: (process.env.DIGEST_CHAT_ID || process.env.TELEGRAM_CHAT_ID) as string | number,
+    threadId: optionalInt("TOPIC_THREAD_DIGEST"),
+  },
+  // Post a thank-you in the group when a first-time contributor's PR is merged.
+  firstContributorShoutout: process.env.FIRST_CONTRIBUTOR_SHOUTOUT !== "false",
+  status: {
+    apiUrl: process.env.STATUS_API_URL || "https://api.txio.xyz/health",
+    webUrl: process.env.STATUS_WEB_URL || "https://txio.xyz",
+  },
+  // Ping PUBLIC_URL/healthz so Render's free plan does not put the service to
+  // sleep (which pauses every scheduled job). On by default on Render.
+  keepAliveMinutes: optionalNonNegativeInt(
+    "KEEP_ALIVE_MINUTES",
+    process.env.RENDER === "true" ? 10 : 0,
+  ),
+};
+
+export type AnnounceConfig = {
+  products: Product[];
+  chatId: string | number;
+  threadId: number | undefined;
+  token: string | undefined;
+  pin: boolean;
+  includePrereleases: boolean;
+  pollMinutes: number;
 };
 
 // Log a warning if githubToken is not set, since merge-conflict detection will be degraded.
