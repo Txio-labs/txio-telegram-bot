@@ -6,7 +6,7 @@ import { GitHubApiError, getRepoStats, type RepoStats } from "../github/api.js";
 export interface CommandInfo {
   name: string;
   description: string;
-  category: "repo" | "community" | "bot";
+  category: "product" | "repo" | "community" | "bot";
 }
 
 /**
@@ -21,9 +21,16 @@ export const commandRegistry: CommandInfo[] = [
   { name: "stats", description: "open issues / open PRs / contributors for a repo", category: "repo" },
   { name: "goodfirstissue", description: "open issues labeled good-first-issue", category: "community" },
   { name: "help-wanted", description: "open issues labeled help-wanted", category: "community" },
+  { name: "download", description: "Txio Desktop installers for your system", category: "product" },
+  { name: "latest", description: "current version of every Txio product", category: "product" },
+  { name: "status", description: "Txio API, web app and chain RPC health", category: "product" },
+  { name: "subscribe", description: "get release notes by DM", category: "product" },
+  { name: "unsubscribe", description: "stop release notes by DM", category: "product" },
+  { name: "subscriptions", description: "what you get by DM", category: "product" },
 ];
 
 const CATEGORY_TITLES: Record<CommandInfo["category"], string> = {
+  product: "🚀 Txio apps",
   repo: "📦 Repo info",
   community: "🤝 Contributing",
   bot: "🤖 Bot",

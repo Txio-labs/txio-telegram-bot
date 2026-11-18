@@ -3,9 +3,10 @@ services:
     name: txio-telegram-bot
     runtime: docker
     dockerfilePath: ./Dockerfile
-    # Note: the stale reminder runs on an in-process timer, so the service
-    # must stay warm (Render free instances spin down after idle time, which
-    # would pause the scheduled job).
+    # Scheduled jobs (stale reminder, bus-factor report, weekly digest,
+    # release polling) run in-process. Free instances sleep after 15 minutes
+    # without traffic, so the bot pings its own /healthz every 10 minutes
+    # (KEEP_ALIVE_MINUTES).
     plan: free
     healthCheckPath: /healthz
     envVars:
@@ -16,4 +17,14 @@ services:
       - key: TELEGRAM_CHAT_ID
         sync: false
       - key: GITHUB_WEBHOOK_SECRET
+        sync: false
+      - key: ANNOUNCE_TOKEN
+        sync: false
+      - key: TOPIC_THREAD_ANNOUNCEMENTS
+        sync: false
+      - key: ANNOUNCE_PIN
+        value: "true"
+      # Persistent state (announced versions, DM subscriptions). The free
+      # plan's disk is wiped on each deploy, so use MongoDB.
+      - key: BOT_MONGODB_URI
         sync: false
