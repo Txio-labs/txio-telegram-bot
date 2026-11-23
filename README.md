@@ -13,7 +13,7 @@ Ops bot for the Txio team.
   announcements topic and to DM subscribers, and alerts the team when a
   desktop release build fails.
 - Answers `/download`, `/latest`, `/status` and `/subscribe`.
-- Posts a weekly digest and thanks first-time contributors.
+- Thanks first-time contributors when their PR is merged.
 - Welcomes new members when they join the group.
 
 ## Notifications
@@ -140,12 +140,10 @@ replaces the built-in list. Fields: `id`, `name`, `repo`, `trigger`
 In a group, the subscription commands reply with a link that opens a DM
 with the bot. Subscribers who block the bot are removed automatically.
 
-### Weekly digest and first-contribution shout-outs
+### App update announcements and first-contribution shout-outs
 
-Every `WEEKLY_DIGEST_CRON` (default Monday 09:00 UTC) the bot posts one
-summary of the past 7 days: releases, merged PRs per repo, contributors, and
-first-time contributors. Quiet weeks post nothing. It covers the tracked
-repos (see stale reminders), or the product repos when none are set.
+Release announcements (see above) are the only update summaries; there is no
+weekly digest. PRs, contributors and other repo activity are not summarized.
 
 When a first-time contributor's PR is merged, the bot thanks them in the
 group. Set `FIRST_CONTRIBUTOR_SHOUTOUT=false` to turn that off.

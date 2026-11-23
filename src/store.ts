@@ -19,7 +19,7 @@ export type BotState = {
   webDeploySha: Record<string, string>;
   /** Telegram chat id -> subscribed product ids. */
   subscriptions: Record<string, string[]>;
-  /** First-time contributors whose PR was merged, for the weekly digest. */
+  /** First-time contributors whose PR was merged (shout-out record). */
   firstTimers: FirstTimer[];
 };
 

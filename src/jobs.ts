@@ -1,6 +1,4 @@
-import { schedule, validate } from "node-cron";
 import { config } from "./config.js";
-import { runWeeklyDigest } from "./digest.js";
 import { pollReleases } from "./releases/poller.js";
 
 type Stoppable = { stop: () => void };
@@ -15,24 +13,13 @@ function every(minutes: number, name: string, task: () => Promise<unknown>, firs
   console.log(`[jobs] ${name} every ${minutes} min`);
 }
 
-/** Starts the release poller, weekly digest and keep-alive ping. */
+/** Starts the release poller and keep-alive ping. */
 export function startJobs(): void {
   if (running.length > 0) return;
 
   const pollMinutes = config.announce?.pollMinutes ?? 0;
   // First poll shortly after boot catches releases missed while asleep.
   every(pollMinutes, "release poll", () => pollReleases(), 30_000);
-
-  const { cron } = config.weeklyDigest;
-  if (cron && validate(cron)) {
-    const job = schedule(cron, () => {
-      runWeeklyDigest().catch((error) => console.error("[jobs] weekly digest failed:", error));
-    });
-    running.push(job);
-    console.log(`[jobs] weekly digest scheduled (cron: ${cron})`);
-  } else if (cron) {
-    console.error(`Invalid WEEKLY_DIGEST_CRON "${cron}"; weekly digest disabled`);
-  }
 
   // Inbound requests keep a Render free instance awake; ping our public URL.
   every(

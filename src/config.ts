@@ -342,12 +342,6 @@ export const config = {
     // webhooks missed. 0 disables.
     pollMinutes: optionalNonNegativeInt("ANNOUNCE_POLL_MINUTES", 15),
   } as AnnounceConfig | undefined,
-  weeklyDigest: {
-    // Default: Monday 09:00 UTC. Empty or invalid disables it.
-    cron: process.env.WEEKLY_DIGEST_CRON ?? "0 9 * * 1",
-    chatId: (process.env.DIGEST_CHAT_ID || process.env.TELEGRAM_CHAT_ID) as string | number,
-    threadId: optionalInt("TOPIC_THREAD_DIGEST"),
-  },
   // Post a thank-you in the group when a first-time contributor's PR is merged.
   firstContributorShoutout: process.env.FIRST_CONTRIBUTOR_SHOUTOUT !== "false",
   status: {

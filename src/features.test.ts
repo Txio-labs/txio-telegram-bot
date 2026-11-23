@@ -14,7 +14,7 @@ vi.hoisted(() => {
 const { mockSendMessage } = vi.hoisted(() => ({ mockSendMessage: vi.fn().mockResolvedValue(undefined) }));
 vi.mock("./telegram/client.js", () => ({ sendMessage: mockSendMessage, bot: {} }));
 
-import { formatWeeklyDigest, isFirstContribution, recordFirstContribution, runWeeklyDigest } from "./digest.js";
+import { isFirstContribution, recordFirstContribution } from "./digest.js";
 import { parseProducts, DEFAULT_PRODUCTS } from "./products.js";
 import { formatReleaseFailure } from "./releases/failures.js";
 import { formatStatus, runStatusChecks, defaultChecks } from "./status.js";
@@ -80,69 +80,6 @@ describe("subscriptions", () => {
     expect(await setSubscription("5", ["cli"], false)).toEqual(["desktop"]);
     await setSubscription("5", ["desktop"], false);
     expect(getState().subscriptions).toEqual({});
-  });
-});
-
-describe("weekly digest", () => {
-  const NOW = Date.parse("2026-11-18T09:00:00Z");
-  const pr = (number: number, author: string) => ({
-    repo: "txio-labs/txio-desktop",
-    number,
-    title: `Change ${number}`,
-    url: `https://github.com/txio-labs/txio-desktop/pull/${number}`,
-    author,
-    mergedAt: "2026-11-17T00:00:00Z",
-  });
-
-  it("returns null for a quiet week", () => {
-    expect(formatWeeklyDigest([{ repo: "a/b", merged: [], releases: [] }], [], NOW)).toBeNull();
-  });
-
-  it("lists releases, merged PRs, contributors and first-timers", () => {
-    const text = formatWeeklyDigest(
-      [
-        {
-          repo: "txio-labs/txio-desktop",
-          merged: [pr(1, "alice"), pr(2, "bob"), pr(3, "alice")],
-          releases: [{ tag: "v1.1.0", url: "https://r" }],
-        },
-      ],
-      [{ login: "bob", repo: "txio-labs/txio-desktop", number: 2, url: "https://p/2", at: "2026-11-17T00:00:00Z" }],
-      NOW,
-    ) as string;
-    expect(text).toContain("3 PRs merged by 2 contributors");
-    expect(text).toContain("Released");
-    expect(text).toContain("alice (2), bob (1)");
-    expect(text).toContain("First contributions");
-  });
-
-  it("caps the message length", () => {
-    const repos = Array.from({ length: 40 }, (_, i) => ({
-      repo: `org/repo-${i}`,
-      merged: Array.from({ length: 5 }, (_, j) => ({ ...pr(j, `user${j}`), title: "x".repeat(80) })),
-      releases: [],
-    }));
-    expect((formatWeeklyDigest(repos, [], NOW) as string).length).toBeLessThanOrEqual(3800 + 60);
-  });
-
-  it("queries each repo and posts one message", async () => {
-    const fetchFn = vi.fn(async (input: string | URL | Request) => {
-      const url = String(input);
-      if (url.includes("/pulls")) {
-        return json([
-          { number: 9, title: "Fix it", html_url: "https://p/9", merged_at: "2026-11-17T00:00:00Z", user: { login: "carol" } },
-          { number: 8, title: "Old", html_url: "https://p/8", merged_at: "2026-10-01T00:00:00Z", user: { login: "dan" } },
-          { number: 7, title: "Bump", html_url: "https://p/7", merged_at: "2026-11-17T00:00:00Z", user: { login: "dependabot[bot]", type: "Bot" } },
-        ]);
-      }
-      return json([]);
-    }) as unknown as typeof fetch;
-    expect(await runWeeklyDigest(NOW, fetchFn)).toBe(true);
-    expect(mockSendMessage).toHaveBeenCalledOnce();
-    const text = mockSendMessage.mock.calls[0][1] as string;
-    expect(text).toContain("#9 Fix it");
-    expect(text).not.toContain("Old");
-    expect(text).not.toContain("Bump");
   });
 });
 

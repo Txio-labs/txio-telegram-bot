@@ -3,7 +3,7 @@ services:
     name: txio-telegram-bot
     runtime: docker
     dockerfilePath: ./Dockerfile
-    # Scheduled jobs (stale reminder, bus-factor report, weekly digest,
+    # Scheduled jobs (stale reminder, bus-factor report,
     # release polling) run in-process. Free instances sleep after 15 minutes
     # without traffic, so the bot pings its own /healthz every 10 minutes
     # (KEEP_ALIVE_MINUTES).
