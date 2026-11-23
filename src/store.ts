@@ -8,6 +8,18 @@ import { dirname } from "node:path";
  */
 export type FirstTimer = { login: string; repo: string; number: number; url: string; at: string };
 
+/** A release or deploy waiting for the weekly app-update post. */
+export type PendingUpdate = {
+  key: string;
+  productId: string;
+  productName: string;
+  title: string;
+  changelog: string[];
+  link?: { url: string; text: string };
+  install?: string;
+  at: string;
+};
+
 export type BotState = {
   /** `<productId>@<version>` keys already announced. */
   announced: string[];
@@ -21,6 +33,8 @@ export type BotState = {
   subscriptions: Record<string, string[]>;
   /** First-time contributors whose PR was merged (shout-out record). */
   firstTimers: FirstTimer[];
+  /** App updates queued for the weekly post. */
+  pendingUpdates: PendingUpdate[];
 };
 
 export function emptyState(): BotState {
@@ -31,6 +45,7 @@ export function emptyState(): BotState {
     webDeploySha: {},
     subscriptions: {},
     firstTimers: [],
+    pendingUpdates: [],
   };
 }
 

@@ -18,15 +18,15 @@ import {
   announceWebDeploy,
   changelogFromCommits,
   downloadButtons,
-  formatReleaseAnnouncement,
+  formatAppUpdates,
+  postAppUpdates,
   productForRepo,
   resolveTagForRun,
-  sendToSubscribers,
   type GitHubRelease,
 } from "./announce.js";
 import { createAnnounceReleaseHandler } from "./endpoint.js";
 import { pollReleases } from "./poller.js";
-import { getState, isAnnounced, resetStoreForTests, updateState } from "../store.js";
+import { getState, isAnnounced, resetStoreForTests, updateState, type PendingUpdate } from "../store.js";
 import type { Product } from "../products.js";
 
 const REPO = "txio-labs/txio-desktop";
@@ -127,199 +127,200 @@ describe("downloadButtons", () => {
   });
 });
 
-describe("formatReleaseAnnouncement", () => {
-  it("includes the product, changelog and update hint, HTML-escaped", () => {
-    const text = formatReleaseAnnouncement(desktop, release(), ["New: <script> & more"]);
-    expect(text).toContain("<b>Txio Desktop v1.1.0 is out</b>");
-    expect(text).toContain("• New: &lt;script&gt; &amp; more");
-    expect(text).toContain("updates itself");
-  });
-
-  it("shows the install command for CLI-style products", () => {
-    const text = formatReleaseAnnouncement(cli, release({ assets: [] }), []);
-    expect(text).toContain("<code>cargo install txio</code>");
-    expect(text).not.toContain("updates itself");
-  });
-
-  it("caps the changelog and reports the rest", () => {
-    const lines = Array.from({ length: 20 }, (_, i) => `New: thing ${i}`);
-    expect(formatReleaseAnnouncement(desktop, release(), lines)).toContain("…and 8 more");
-  });
-
-  it("drops the changelog when the message would be too long", () => {
-    const lines = Array.from({ length: 12 }, () => `New: ${"x".repeat(400)}`);
-    const text = formatReleaseAnnouncement(desktop, release(), lines);
-    expect(text).not.toContain("What's new");
-    expect(text.length).toBeLessThan(3800);
-  });
-});
-
 describe("announceRelease", () => {
-  it("posts once to the announcements chat/topic, pins it and persists it", async () => {
+  it("queues the release for the weekly post instead of posting it", async () => {
     const send = vi.fn().mockResolvedValue(77);
-    const pin = vi.fn().mockResolvedValue(undefined);
     const fetchFn = fakeFetch(happyRoutes);
+    const first = await announceRelease(desktop, "v1.1.0", "test", { fetchFn, send, pin: vi.fn(), ...noSleep });
+    const second = await announceRelease(desktop, "v1.1.0", "test", { fetchFn, send, pin: vi.fn(), ...noSleep });
 
-    const first = await announceRelease(desktop, "v1.1.0", "test", { fetchFn, send, pin, ...noSleep });
-    const second = await announceRelease(desktop, "v1.1.0", "test", { fetchFn, send, pin, ...noSleep });
-
-    expect(first).toEqual({ status: "announced", messageId: 77, subscribers: 0 });
+    expect(first).toEqual({ status: "queued" });
     expect(second).toEqual({ status: "duplicate" });
-    expect(send).toHaveBeenCalledOnce();
-    const [chatId, text, threadId] = send.mock.calls[0];
-    expect(chatId).toBe("-1009999");
-    expect(threadId).toBe(42);
-    expect(text).toContain("New: Browser sign-in via txio-desktop:// links");
-    expect(text).toContain("Fixed: Retry Sui GraphQL on 429");
-    expect(text).not.toContain("macos-15");
-    expect(pin).toHaveBeenCalledWith("-1009999", 77);
+    expect(send).not.toHaveBeenCalled();
+    expect(getState().pendingUpdates).toHaveLength(1);
+    const [item] = getState().pendingUpdates;
+    expect(item.title).toBe("Txio Desktop v1.1.0");
+    expect(item.changelog).toContain("New: Browser sign-in via txio-desktop:// links");
+    expect(item.changelog.join("\n")).not.toContain("macos-15");
     expect(isAnnounced("desktop@1.1.0")).toBe(true);
   });
 
-  it("posts once when both triggers arrive at the same time", async () => {
-    const send = vi.fn().mockResolvedValue(1);
-    const deps = { fetchFn: fakeFetch(happyRoutes), send, pin: vi.fn(), ...noSleep };
+  it("queues once when both triggers arrive at the same time", async () => {
+    const deps = { fetchFn: fakeFetch(happyRoutes), send: vi.fn(), pin: vi.fn(), ...noSleep };
     const results = await Promise.all([
       announceRelease(desktop, "v1.1.0", "a", deps),
       announceRelease(desktop, "v1.1.0", "b", deps),
     ]);
-    expect(send).toHaveBeenCalledOnce();
-    expect(results.map((r) => r.status).sort()).toEqual(["announced", "duplicate"]);
+    expect(results.map((r) => r.status).sort()).toEqual(["duplicate", "queued"]);
+    expect(getState().pendingUpdates).toHaveLength(1);
   });
 
-  it("DMs subscribers and drops chats that blocked the bot", async () => {
-    await updateState((s) => {
-      s.subscriptions = { "111": ["desktop"], "222": ["desktop", "cli"], "333": ["cli"] };
-    });
-    const send = vi.fn(async (chatId: string | number) => {
-      if (chatId === "222") throw Object.assign(new Error("Forbidden"), { error_code: 403 });
-      return 1;
-    });
-    const result = await announceRelease(desktop, "v1.1.0", "test", {
-      fetchFn: fakeFetch(happyRoutes),
-      send,
-      pin: vi.fn(),
-      ...noSleep,
-    });
-    expect(result).toMatchObject({ status: "announced", subscribers: 1 });
-    expect(send.mock.calls.map((c) => c[0])).toEqual(["-1009999", "111", "222"]);
-    expect(getState().subscriptions).toEqual({ "111": ["desktop"], "333": ["cli"] });
-  });
-
-  it("still announces when pinning fails", async () => {
-    const result = await announceRelease(desktop, "v1.1.0", "test", {
-      fetchFn: fakeFetch(happyRoutes),
-      send: vi.fn().mockResolvedValue(5),
-      pin: vi.fn().mockRejectedValue(new Error("not enough rights")),
-      ...noSleep,
-    });
-    expect(result.status).toBe("announced");
-  });
-
-  it("announces without a changelog when the compare call fails", async () => {
-    const send = vi.fn().mockResolvedValue(1);
+  it("queues without a changelog when the compare call fails", async () => {
     await announceRelease(desktop, "v1.1.0", "test", {
       fetchFn: fakeFetch({ [`/repos/${REPO}/releases/tags/v1.1.0`]: () => json(release()) }),
-      send,
+      send: vi.fn(),
       pin: vi.fn(),
       ...noSleep,
     });
-    expect(send).toHaveBeenCalledOnce();
-    expect(send.mock.calls[0][1]).not.toContain("What's new");
+    expect(getState().pendingUpdates[0].changelog).toEqual([]);
   });
 
   it("skips prereleases", async () => {
-    const send = vi.fn();
     const result = await announceRelease(desktop, "v1.1.0", "test", {
       fetchFn: fakeFetch({ [`/repos/${REPO}/releases/tags/v1.1.0`]: () => json(release({ prerelease: true })) }),
-      send,
+      send: vi.fn(),
     });
     expect(result.status).toBe("skipped");
-    expect(send).not.toHaveBeenCalled();
+    expect(getState().pendingUpdates).toEqual([]);
   });
 
   it("throws when the release does not exist, and allows a retry", async () => {
-    const send = vi.fn().mockResolvedValue(1);
-    await expect(announceRelease(desktop, "v1.1.0", "test", { fetchFn: fakeFetch({}), send })).rejects.toThrow(
+    await expect(announceRelease(desktop, "v1.1.0", "test", { fetchFn: fakeFetch({}), send: vi.fn() })).rejects.toThrow(
       "No release found",
     );
     const retry = await announceRelease(desktop, "v1.1.0", "test", {
       fetchFn: fakeFetch(happyRoutes),
-      send,
+      send: vi.fn(),
       pin: vi.fn(),
       ...noSleep,
     });
-    expect(retry.status).toBe("announced");
+    expect(retry.status).toBe("queued");
   });
 });
 
 describe("announceRegistryVersion", () => {
-  it("posts a short note when there is no GitHub release for the version", async () => {
-    const send = vi.fn().mockResolvedValue(3);
-    const result = await announceRegistryVersion(cli, "0.1.3", "test", {
-      fetchFn: fakeFetch({}),
-      send,
-      pin: vi.fn(),
-      ...noSleep,
-    });
-    expect(result.status).toBe("announced");
-    expect(send.mock.calls[0][1]).toContain("<b>Txio CLI 0.1.3 is out</b>");
-    expect(send.mock.calls[0][1]).toContain("cargo install txio");
+  it("queues a short entry when there is no GitHub release for the version", async () => {
+    const result = await announceRegistryVersion(cli, "0.1.3", "test", { fetchFn: fakeFetch({}), send: vi.fn(), ...noSleep });
+    expect(result).toEqual({ status: "queued" });
+    expect(getState().pendingUpdates[0]).toMatchObject({ title: "Txio CLI 0.1.3", changelog: [], install: "cargo install txio" });
     expect(isAnnounced("cli@0.1.3")).toBe(true);
   });
 
-  it("does not repeat a version already announced from its GitHub release", async () => {
+  it("does not queue a version already announced from its GitHub release", async () => {
     await updateState((s) => void s.announced.push("cli@0.1.3"));
     const send = vi.fn();
     expect((await announceRegistryVersion(cli, "0.1.3", "test", { send })).status).toBe("duplicate");
-    expect(send).not.toHaveBeenCalled();
+    expect(getState().pendingUpdates).toEqual([]);
   });
 });
 
 describe("announceWebDeploy", () => {
   const compare = (commits: string[]) => () => json({ commits: commits.map((message) => ({ commit: { message } })) });
 
-  it("records the first deploy without posting", async () => {
-    const send = vi.fn();
-    const result = await announceWebDeploy(web, "aaa111", "test", { send });
+  it("records the first deploy without queueing", async () => {
+    const result = await announceWebDeploy(web, "aaa111", "test", { send: vi.fn() });
     expect(result.status).toBe("skipped");
     expect(getState().webDeploySha.web).toBe("aaa111");
-    expect(send).not.toHaveBeenCalled();
+    expect(getState().pendingUpdates).toEqual([]);
   });
 
-  it("posts the user-facing changes since the last deploy", async () => {
+  it("queues the user-facing changes since the last deploy", async () => {
     await updateState((s) => void (s.webDeploySha.web = "aaa111"));
-    const send = vi.fn().mockResolvedValue(8);
     const result = await announceWebDeploy(web, "bbb222", "test", {
       fetchFn: fakeFetch({ "/repos/txio-labs/txio/compare/aaa111...bbb222": compare(["feat: Aptos simulation"]) }),
-      send,
+      send: vi.fn(),
       pin: vi.fn(),
       ...noSleep,
     });
-    expect(result.status).toBe("announced");
-    expect(send.mock.calls[0][1]).toContain("Txio Web updated");
-    expect(send.mock.calls[0][1]).toContain("New: Aptos simulation");
+    expect(result.status).toBe("queued");
+    expect(getState().pendingUpdates[0]).toMatchObject({ title: "Txio Web updated", changelog: ["New: Aptos simulation"] });
     expect(getState().webDeploySha.web).toBe("bbb222");
   });
 
   it("stays quiet when only internal changes shipped", async () => {
     await updateState((s) => void (s.webDeploySha.web = "aaa111"));
-    const send = vi.fn();
     const result = await announceWebDeploy(web, "ccc333", "test", {
       fetchFn: fakeFetch({ "/repos/txio-labs/txio/compare/aaa111...ccc333": compare(["chore: deps", "ci: cache"]) }),
-      send,
+      send: vi.fn(),
     });
     expect(result).toEqual({ status: "skipped", reason: "no user-facing changes" });
-    expect(send).not.toHaveBeenCalled();
+    expect(getState().pendingUpdates).toEqual([]);
   });
 });
 
-describe("sendToSubscribers", () => {
-  it("keeps chats after a temporary error", async () => {
-    await updateState((s) => void (s.subscriptions = { "111": ["cli"] }));
-    const send = vi.fn().mockRejectedValue(Object.assign(new Error("Too Many Requests"), { error_code: 429 }));
-    expect(await sendToSubscribers("cli", "hi", { inline_keyboard: [] }, { send, ...noSleep })).toBe(0);
-    expect(getState().subscriptions).toEqual({ "111": ["cli"] });
+const queued = (over: Partial<PendingUpdate>): PendingUpdate => ({
+  key: "k",
+  productId: desktop.id,
+  productName: "Txio Desktop",
+  title: "Txio Desktop v1.1.0",
+  changelog: [],
+  at: "2026-11-18T10:00:00Z",
+  ...over,
+});
+
+describe("formatAppUpdates", () => {
+  it("groups updates by product and includes install commands", () => {
+    const text = formatAppUpdates([
+      queued({ changelog: ["New: sign-in"], link: { url: "https://x", text: "Release notes" } }),
+      queued({ key: "cli", productId: cli.id, productName: "Txio CLI", title: "Txio CLI 0.1.3", install: "cargo install txio" }),
+    ]) as string;
+    expect(text).toContain("2 updates");
+    expect(text).toContain("<b>Txio Desktop</b>");
+    expect(text).toContain("• New: sign-in");
+    expect(text).toContain("<b>Txio CLI</b>");
+    expect(text).toContain("<code>cargo install txio</code>");
+  });
+
+  it("returns null when nothing is queued", () => {
+    expect(formatAppUpdates([])).toBeNull();
+  });
+
+  it("HTML-escapes titles and changelog lines", () => {
+    const text = formatAppUpdates([queued({ title: "<b>x</b>", changelog: ["<script>"] })]) as string;
+    expect(text).toContain("&lt;b&gt;x&lt;/b&gt;");
+    expect(text).toContain("&lt;script&gt;");
+  });
+});
+
+describe("postAppUpdates", () => {
+  it("posts one message to the announcements topic, pins it, and empties the queue", async () => {
+    await announceRelease(desktop, "v1.1.0", "test", { fetchFn: fakeFetch(happyRoutes), send: vi.fn(), pin: vi.fn(), ...noSleep });
+    const send = vi.fn().mockResolvedValue(88);
+    const pin = vi.fn().mockResolvedValue(undefined);
+    expect(await postAppUpdates({ send, pin, ...noSleep })).toBe(true);
+
+    expect(send).toHaveBeenCalledOnce();
+    const [chatId, text, threadId] = send.mock.calls[0];
+    expect(chatId).toBe("-1009999");
+    expect(threadId).toBe(42);
+    expect(text).toContain("Txio Desktop v1.1.0");
+    expect(pin).toHaveBeenCalledWith("-1009999", 88);
+    expect(getState().pendingUpdates).toEqual([]);
+  });
+
+  it("does nothing when the queue is empty", async () => {
+    const send = vi.fn();
+    expect(await postAppUpdates({ send, ...noSleep })).toBe(false);
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it("DMs each subscriber only the products they follow, and drops chats that blocked the bot", async () => {
+    const deps = { fetchFn: fakeFetch(happyRoutes), send: vi.fn(), pin: vi.fn(), ...noSleep };
+    await announceRelease(desktop, "v1.1.0", "test", deps);
+    await announceRegistryVersion(cli, "0.1.3", "test", { fetchFn: fakeFetch({}), send: vi.fn(), ...noSleep });
+    await updateState((s) => {
+      s.subscriptions = { "111": ["desktop"], "222": ["desktop", "cli"], "333": ["cli"] };
+    });
+
+    const send = vi.fn(async (chatId: string | number) => {
+      if (chatId === "222") throw Object.assign(new Error("Forbidden"), { error_code: 403 });
+      return 1;
+    });
+    expect(await postAppUpdates({ send, pin: vi.fn(), ...noSleep })).toBe(true);
+
+    expect(send.mock.calls.map((c) => c[0])).toEqual(["-1009999", "111", "222", "333"]);
+    expect(send.mock.calls[1][1]).toContain("Txio Desktop");
+    expect(send.mock.calls[1][1]).not.toContain("Txio CLI");
+    expect(send.mock.calls[3][1]).toContain("Txio CLI");
+    expect(send.mock.calls[3][1]).not.toContain("Txio Desktop");
+    expect(getState().subscriptions).toEqual({ "111": ["desktop"], "333": ["cli"] });
+  });
+
+  it("keeps the queue when the group post fails, so next week's post retries it", async () => {
+    await announceRelease(desktop, "v1.1.0", "test", { fetchFn: fakeFetch(happyRoutes), send: vi.fn(), pin: vi.fn(), ...noSleep });
+    const send = vi.fn().mockRejectedValue(new Error("Telegram down"));
+    await expect(postAppUpdates({ send, ...noSleep })).rejects.toThrow("Telegram down");
+    expect(getState().pendingUpdates).toHaveLength(1);
   });
 });
 
@@ -368,8 +369,8 @@ describe("pollReleases", () => {
     expect(send).not.toHaveBeenCalled();
 
     await pollReleases({ ...deps, fetchFn: fakeFetch(pollRoutes([run("success")])) }, NOW);
-    expect(send).toHaveBeenCalledOnce();
-    expect(send.mock.calls[0][1]).toContain("Txio Desktop v1.1.0 is out");
+    expect(send).not.toHaveBeenCalled();
+    expect(getState().pendingUpdates.map((p) => p.title)).toEqual(["Txio Desktop v1.1.0"]);
   });
 
   it("announces a new crates.io version", async () => {
@@ -384,8 +385,8 @@ describe("pollReleases", () => {
       "https://crates.io/api/v1/crates/txio": () => json({ crate: { max_stable_version: "0.1.3" } }),
     };
     await pollReleases({ fetchFn: fakeFetch(routes), send, pin: vi.fn(), ...noSleep }, NOW);
-    expect(send).toHaveBeenCalledOnce();
-    expect(send.mock.calls[0][1]).toContain("Txio CLI 0.1.3 is out");
+    expect(send).not.toHaveBeenCalled();
+    expect(getState().pendingUpdates.map((p) => p.title)).toEqual(["Txio CLI 0.1.3"]);
   });
 });
 
@@ -419,7 +420,7 @@ describe("POST /announce/release", () => {
       { fetchFn: fakeFetch(happyRoutes), send, pin: vi.fn(), ...noSleep },
     );
     expect(res.statusCode).toBe(200);
-    expect(res.body).toEqual({ status: "announced", messageId: 9, subscribers: 0 });
+    expect(res.body).toEqual({ status: "queued" });
   });
 
   it("returns 502 so the workflow retries when GitHub has no release yet", async () => {

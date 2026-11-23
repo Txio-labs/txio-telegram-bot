@@ -341,6 +341,8 @@ export const config = {
     // How often to check GitHub releases and crates.io/npm for versions the
     // webhooks missed. 0 disables.
     pollMinutes: optionalNonNegativeInt("ANNOUNCE_POLL_MINUTES", 15),
+    // Weekly post of queued app updates. Default: Monday 09:00 UTC. Empty or invalid disables it.
+    digestCron: process.env.APP_UPDATES_CRON ?? "0 9 * * 1",
   } as AnnounceConfig | undefined,
   // Post a thank-you in the group when a first-time contributor's PR is merged.
   firstContributorShoutout: process.env.FIRST_CONTRIBUTOR_SHOUTOUT !== "false",
@@ -364,6 +366,7 @@ export type AnnounceConfig = {
   pin: boolean;
   includePrereleases: boolean;
   pollMinutes: number;
+  digestCron: string;
 };
 
 // Log a warning if githubToken is not set, since merge-conflict detection will be degraded.

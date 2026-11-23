@@ -1,4 +1,6 @@
+import { schedule, validate } from "node-cron";
 import { config } from "./config.js";
+import { postAppUpdates } from "./releases/announce.js";
 import { pollReleases } from "./releases/poller.js";
 
 type Stoppable = { stop: () => void };
@@ -20,6 +22,19 @@ export function startJobs(): void {
   const pollMinutes = config.announce?.pollMinutes ?? 0;
   // First poll shortly after boot catches releases missed while asleep.
   every(pollMinutes, "release poll", () => pollReleases(), 30_000);
+
+  // App updates are queued as they ship and posted once a week.
+  const digestCron = config.announce?.digestCron ?? "";
+  if (digestCron && validate(digestCron)) {
+    running.push(
+      schedule(digestCron, () => {
+        postAppUpdates().catch((error) => console.error("[jobs] weekly app updates failed:", error));
+      }),
+    );
+    console.log(`[jobs] weekly app updates scheduled (cron: ${digestCron})`);
+  } else if (digestCron) {
+    console.error(`Invalid APP_UPDATES_CRON "${digestCron}"; weekly app updates disabled`);
+  }
 
   // Inbound requests keep a Render free instance awake; ping our public URL.
   every(

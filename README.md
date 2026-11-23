@@ -9,9 +9,9 @@ Ops bot for the Txio team.
   and posts a formatted notification into the Telegram group.
   Each event type can optionally be routed to its own forum topic, and pull
   requests can be routed to a private DM instead of the group.
-- Announces every Txio Desktop, CLI, SDK and Web release to an
-  announcements topic and to DM subscribers, and alerts the team when a
-  desktop release build fails.
+- Collects every Txio Desktop, CLI, SDK and Web update during the week and
+  posts one weekly summary to the announcements topic and to DM subscribers,
+  and alerts the team when a desktop release build fails.
 - Answers `/download`, `/latest`, `/status` and `/subscribe`.
 - Thanks first-time contributors when their PR is merged.
 - Welcomes new members when they join the group.
@@ -79,11 +79,16 @@ moved files retain their history. API failures are logged per repository.
 
 ### Release announcements
 
-Every new version of a Txio product is posted once to the announcements chat
-(`ANNOUNCE_CHAT_ID`, default the group) and topic (`TOPIC_THREAD_ANNOUNCEMENTS`),
-then sent by DM to everyone subscribed to that product. A post includes a
-"What's new" list built from `feat:`, `fix:` and `perf:` commits since the
-previous version, plus download or install details.
+Each new version of a Txio product, and each user-facing web deploy, is
+queued when it ships. Nothing is posted at that moment. Every week
+(`APP_UPDATES_CRON`, default Monday 09:00 UTC) the bot posts one summary of
+the queued updates to the announcements chat (`ANNOUNCE_CHAT_ID`, default the
+group) and topic (`TOPIC_THREAD_ANNOUNCEMENTS`), grouped by product, then
+sends each DM subscriber only the products they follow. Each entry lists the
+version and a "What's new" list built from `feat:`, `fix:` and `perf:` commits
+since the previous version, plus the install command where one applies.
+Updates queued after a post go into the next week's summary. The queue is kept
+in the persistent state, so a restart does not drop it.
 
 | Product | Repo | Announced when | Backup |
 | --- | --- | --- | --- |
@@ -96,10 +101,10 @@ These user-facing posts are separate from the team-facing "Release
 published" notification, which still goes to `TOPIC_THREAD_RELEASES` for
 every repo.
 
-Each version is posted once, no matter how many triggers fire (the
+Each version is queued once, no matter how many triggers fire (the
 duplicate check is kept in the persistent state). Drafts and prereleases are
 skipped unless `ANNOUNCE_PRERELEASES=true`. With `ANNOUNCE_PIN=true` the bot
-pins the post; it needs the "Pin messages" admin right, and a failed pin
+pins the weekly post; it needs the "Pin messages" admin right, and a failed pin
 never blocks the post.
 
 **Desktop workflow step.** The `announce` job in txio-desktop's `release.yml`

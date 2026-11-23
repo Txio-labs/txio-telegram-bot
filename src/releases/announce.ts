@@ -10,7 +10,7 @@ import {
   type GitHubRelease,
 } from "./github.js";
 import { findProductByRepo, type Product } from "../products.js";
-import { getState, isAnnounced, markAnnounced, updateState } from "../store.js";
+import { getState, isAnnounced, markAnnounced, updateState, type PendingUpdate } from "../store.js";
 import { bot } from "../telegram/client.js";
 
 export { GitHubFetchError, type GitHubRelease };
@@ -20,11 +20,12 @@ export const ANNOUNCEMENT_MAX_LENGTH = 3800;
 const MAX_CHANGELOG_LINES = 12;
 // Telegram allows about 30 messages per second; stay well below it for DMs.
 const DM_DELAY_MS = 60;
+const NO_KEYBOARD: InlineKeyboard = { inline_keyboard: [] };
 
 export type InlineKeyboard = { inline_keyboard: Array<Array<{ text: string; url: string }>> };
 
 export type AnnounceResult =
-  | { status: "announced"; messageId: number; subscribers: number }
+  | { status: "queued" }
   | { status: "duplicate" }
   | { status: "skipped"; reason: string };
 
@@ -138,57 +139,10 @@ export function downloadButtons(
   return { inline_keyboard: rows };
 }
 
-function changelogBlock(changelog: string[]): string {
-  if (changelog.length === 0) return "";
-  const shown = changelog.slice(0, MAX_CHANGELOG_LINES);
-  const lines = shown.map((line) => `• ${escapeHtml(line)}`);
-  const hidden = changelog.length - shown.length;
-  if (hidden > 0) lines.push(`…and ${hidden} more`);
-  return `<b>What's new</b>\n${lines.join("\n")}`;
-}
-
-/** Joins sections; drops the changelog if the message would be too long. */
-function compose(header: string, changelog: string[], footer: string[]): string {
-  const parts = (withChangelog: boolean) =>
-    [header, withChangelog ? changelogBlock(changelog) : "", ...footer].filter(Boolean).join("\n\n");
-  const full = parts(true);
-  return full.length <= ANNOUNCEMENT_MAX_LENGTH ? full : parts(false);
-}
-
-export function formatReleaseAnnouncement(
-  product: Product,
-  release: GitHubRelease,
-  changelog: string[],
-): string {
-  const header = `🚀 <b>${escapeHtml(`${product.name} ${release.tag_name}`)} is out</b>`;
-  const footer: string[] = [];
-  if (hasInstallers(release)) {
-    footer.push("Already installed? The app updates itself: accept the prompt and restart.\nNew here? Pick your system below.");
-  }
-  if (product.install) footer.push(`Install or upgrade: <code>${escapeHtml(product.install)}</code>`);
-  footer.push(link(release.html_url, "Full release notes"));
-  return compose(header, changelog, footer);
-}
-
 export function registryPageUrl(product: Product): string | undefined {
   if (product.crate) return `https://crates.io/crates/${product.crate}`;
   if (product.npm) return `https://www.npmjs.com/package/${product.npm}`;
   return undefined;
-}
-
-export function formatRegistryAnnouncement(product: Product, version: string): string {
-  const header = `🚀 <b>${escapeHtml(`${product.name} ${normalizeVersion(version)}`)} is out</b>`;
-  const footer: string[] = [];
-  if (product.install) footer.push(`Install or upgrade: <code>${escapeHtml(product.install)}</code>`);
-  const page = registryPageUrl(product);
-  if (page) footer.push(link(page, product.crate ? "crates.io" : "npm"));
-  return compose(header, [], footer);
-}
-
-export function formatWebDeployAnnouncement(product: Product, changelog: string[]): string {
-  const header = `🌐 <b>${escapeHtml(product.name)} updated</b>`;
-  const footer = product.url ? [`Live now at ${link(product.url, product.url.replace(/^https?:\/\//, ""))}. Refresh to get it.`] : [];
-  return compose(header, changelog, footer);
 }
 
 // ── Delivery ──────────────────────────────────────────────────────────
@@ -222,20 +176,71 @@ function isGoneError(error: unknown): boolean {
   return code === 403 || (code === 400 && /chat not found/i.test(text));
 }
 
-/** Sends a post to every DM subscriber of `productId`; drops chats that are gone. */
-export async function sendToSubscribers(
-  productId: string,
-  text: string,
-  keyboard: InlineKeyboard,
-  deps: AnnounceDeps = {},
-): Promise<number> {
+/** Queues a release or deploy for the weekly post. Nothing is sent here. */
+async function queueUpdate(
+  key: string,
+  product: Product,
+  update: Pick<PendingUpdate, "title" | "changelog" | "link">,
+  source: string,
+): Promise<AnnounceResult> {
+  if (!config.announce) return { status: "skipped", reason: "announcements not configured" };
+  await updateState((s) => {
+    s.pendingUpdates.push({
+      key,
+      productId: product.id,
+      productName: product.name,
+      install: product.install,
+      at: new Date().toISOString(),
+      ...update,
+    });
+  });
+  await markAnnounced(key);
+  console.log(`[announce] queued ${key} for the weekly update (via ${source})`);
+  return { status: "queued" };
+}
+
+/** Formats queued updates into one message, grouped by product. Null when there is nothing to say. */
+export function formatAppUpdates(items: PendingUpdate[]): string | null {
+  if (items.length === 0) return null;
+  const groups = new Map<string, PendingUpdate[]>();
+  for (const item of items) groups.set(item.productId, [...(groups.get(item.productId) ?? []), item]);
+
+  const header = `📦 <b>Txio app updates</b>\n${items.length} update${items.length === 1 ? "" : "s"}`;
+  const sections = [...groups.values()].map((group) => {
+    const lines = [`<b>${escapeHtml(group[0].productName)}</b>`];
+    for (const item of group) {
+      const title = item.link ? link(item.link.url, item.title) : escapeHtml(item.title);
+      lines.push(`🚀 ${title}`);
+      for (const line of item.changelog.slice(0, MAX_CHANGELOG_LINES)) lines.push(`• ${escapeHtml(line)}`);
+      const hidden = item.changelog.length - MAX_CHANGELOG_LINES;
+      if (hidden > 0) lines.push(`…and ${hidden} more`);
+    }
+    const install = group.find((item) => item.install)?.install;
+    if (install) lines.push(`Install or upgrade: <code>${escapeHtml(install)}</code>`);
+    return lines.join("\n");
+  });
+
+  // Drop whole product sections from the end until the message fits.
+  const trimmed = (kept: string[]) => [header, ...kept, "…(more updates trimmed)"].join("\n\n");
+  let text = [header, ...sections].join("\n\n");
+  while (text.length > ANNOUNCEMENT_MAX_LENGTH && sections.length > 1) {
+    sections.pop();
+    text = trimmed(sections);
+  }
+  return text.slice(0, ANNOUNCEMENT_MAX_LENGTH);
+}
+
+/** DMs each subscriber only the updates for the products they follow. */
+async function sendDigestToSubscribers(pending: PendingUpdate[], deps: AnnounceDeps): Promise<number> {
   const send = deps.send ?? defaultSend;
   const sleep = deps.sleep ?? defaultSleep;
   let delivered = 0;
   const gone: string[] = [];
-  for (const chatId of subscribersOf(productId)) {
+  for (const [chatId, productIds] of Object.entries(getState().subscriptions)) {
+    const text = formatAppUpdates(pending.filter((item) => productIds.includes(item.productId)));
+    if (!text) continue;
     try {
-      await send(chatId, text, undefined, keyboard);
+      await send(chatId, text, undefined, NO_KEYBOARD);
       delivered += 1;
     } catch (error) {
       if (isGoneError(error)) gone.push(chatId);
@@ -251,6 +256,36 @@ export async function sendToSubscribers(
   return delivered;
 }
 
+/**
+ * Posts every queued update as one weekly message to the announcements
+ * chat, then DMs subscribers. Posted items leave the queue; items queued
+ * while posting stay for next week. Returns false when nothing was queued.
+ */
+export async function postAppUpdates(deps: AnnounceDeps = {}): Promise<boolean> {
+  const announce = config.announce;
+  if (!announce) return false;
+  const pending = [...getState().pendingUpdates];
+  const text = formatAppUpdates(pending);
+  if (!text) return false;
+
+  const messageId = await (deps.send ?? defaultSend)(announce.chatId, text, announce.threadId, NO_KEYBOARD);
+  if (announce.pin) {
+    try {
+      await (deps.pin ?? defaultPin)(announce.chatId, messageId);
+    } catch (error) {
+      console.warn("[announce] could not pin the weekly update:", error);
+    }
+  }
+  const subscribers = await sendDigestToSubscribers(pending, deps);
+
+  const posted = new Set(pending.map((item) => item.key));
+  await updateState((s) => {
+    s.pendingUpdates = s.pendingUpdates.filter((item) => !posted.has(item.key));
+  });
+  console.log(`[announce] posted ${pending.length} app update(s), message ${messageId}, ${subscribers} DM(s)`);
+  return true;
+}
+
 // The release workflow and the webhook trigger an announcement for the same
 // version seconds apart; share the in-flight run so only one posts.
 const inFlight = new Map<string, Promise<AnnounceResult>>();
@@ -262,33 +297,6 @@ function once(key: string, run: () => Promise<AnnounceResult>): Promise<Announce
   const promise = run().finally(() => inFlight.delete(key));
   inFlight.set(key, promise);
   return promise;
-}
-
-/** Posts to the announcements chat, records it, pins it, then DMs subscribers. */
-async function publish(
-  key: string,
-  product: Product,
-  text: string,
-  keyboard: InlineKeyboard,
-  source: string,
-  deps: AnnounceDeps,
-): Promise<AnnounceResult> {
-  const announce = config.announce;
-  if (!announce) return { status: "skipped", reason: "announcements not configured" };
-  const messageId = await (deps.send ?? defaultSend)(announce.chatId, text, announce.threadId, keyboard);
-  await markAnnounced(key);
-  console.log(`[announce] posted ${key} (via ${source}), message ${messageId}`);
-
-  if (announce.pin) {
-    try {
-      await (deps.pin ?? defaultPin)(announce.chatId, messageId);
-    } catch (error) {
-      // Pinning needs admin rights; a missing right must not fail the post.
-      console.warn(`[announce] could not pin ${key}:`, error);
-    }
-  }
-  const subscribers = await sendToSubscribers(product.id, text, keyboard, deps);
-  return { status: "announced", messageId, subscribers };
 }
 
 // ── Entry points ──────────────────────────────────────────────────────
@@ -314,9 +322,12 @@ export function announceRelease(
       return { status: "skipped", reason: "release is a prerelease" };
     }
     const changelog = await releaseChangelog(product.repo, release, fetchFn);
-    const text = formatReleaseAnnouncement(product, release, changelog);
-    const keyboard = downloadButtons(release, product.url, product.trigger === "workflow" ? "Download page" : "Website");
-    return publish(announceKey(product, tag), product, text, keyboard, source, deps);
+    return queueUpdate(
+      announceKey(product, tag),
+      product,
+      { title: `${product.name} ${release.tag_name}`, changelog, link: { url: release.html_url, text: "Release notes" } },
+      source,
+    );
   });
 }
 
@@ -344,8 +355,16 @@ export function announceRegistryVersion(
     }
     return once(key, async () => {
       const page = registryPageUrl(product);
-      const keyboard: InlineKeyboard = { inline_keyboard: page ? [[{ text: "View package", url: page }]] : [] };
-      return publish(key, product, formatRegistryAnnouncement(product, version), keyboard, source, deps);
+      return queueUpdate(
+        key,
+        product,
+        {
+          title: `${product.name} ${normalizeVersion(version)}`,
+          changelog: [],
+          link: page ? { url: page, text: product.crate ? "crates.io" : "npm" } : undefined,
+        },
+        source,
+      );
     });
   })();
 }
@@ -372,10 +391,16 @@ export function announceWebDeploy(
     const changelog = changelogFromCommits(await fetchCommitMessages(product.repo, previous, sha, fetchFn));
     await updateState((s) => void (s.webDeploySha[product.id] = sha));
     if (changelog.length === 0) return { status: "skipped", reason: "no user-facing changes" };
-    const keyboard: InlineKeyboard = {
-      inline_keyboard: product.url ? [[{ text: `Open ${product.name}`, url: product.url }]] : [],
-    };
-    return publish(key, product, formatWebDeployAnnouncement(product, changelog), keyboard, source, deps);
+    return queueUpdate(
+      key,
+      product,
+      {
+        title: `${product.name} updated`,
+        changelog,
+        link: product.url ? { url: product.url, text: product.url.replace(/^https?:\/\//, "") } : undefined,
+      },
+      source,
+    );
   });
 }
 
