@@ -441,25 +441,15 @@ export function isForcePushToDefaultBranch(
 webhooks.on("create", async (event) => {
   if (isDuplicateDelivery(event.id)) return;
   if (!isBranchRef(event.payload.ref_type)) return;
-  const { chatId, threadId } = resolveDestination(
-    event.payload.repository?.full_name,
-    "branches",
-    config.telegramChatId,
-    config.topicThreads.branches,
-  );
-  await sendMessage(chatId, formatBranchCreatedEvent(event), threadId);
+  // Branch creates are not posted to the group: feature branches are internal.
+  console.log(`[webhook] branch created ${event.payload.ref} in ${event.payload.repository?.full_name}`);
 });
 
 webhooks.on("delete", async (event) => {
   if (isDuplicateDelivery(event.id)) return;
   if (!isBranchRef(event.payload.ref_type)) return;
-  const { chatId, threadId } = resolveDestination(
-    event.payload.repository?.full_name,
-    "branches",
-    config.telegramChatId,
-    config.topicThreads.branches,
-  );
-  await sendMessage(chatId, formatBranchDeletedEvent(event), threadId);
+  // Branch deletes are not posted to the group: feature branches are internal.
+  console.log(`[webhook] branch deleted ${event.payload.ref} in ${event.payload.repository?.full_name}`);
 });
 
 webhooks.on("push", async (event) => {

@@ -5,7 +5,7 @@
 Ops bot for the Txio team.
 
 - Listens for GitHub webhook events (issues, pull requests, CI runs,
-  deployments, branch create/delete, force-pushes to the default branch)
+  deployments, force-pushes to the default branch; branch create/delete is logged, not posted)
   and posts a formatted notification into the Telegram group.
   Each event type can optionally be routed to its own forum topic, and pull
   requests can be routed to a private DM instead of the group.

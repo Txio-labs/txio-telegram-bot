@@ -83,7 +83,7 @@ describe("branch create/delete handlers", () => {
     mockSendMessage.mockClear();
   });
 
-  it("posts a notification when a branch is created", async () => {
+  it("does not post a branch creation to the group", async () => {
     await receive("create", {
       ref: "feature/foo",
       ref_type: "branch",
@@ -93,12 +93,7 @@ describe("branch create/delete handlers", () => {
       sender: { login: "alice" },
     });
 
-    expect(mockSendMessage).toHaveBeenCalledTimes(1);
-    const [chatId, text] = mockSendMessage.mock.calls[0];
-    expect(chatId).toBe("-1000000");
-    expect(text).toContain("Branch created");
-    expect(text).toContain("feature/foo");
-    expect(text).toContain("alice");
+    expect(mockSendMessage).not.toHaveBeenCalled();
   });
 
   it("ignores tag creation", async () => {
@@ -114,7 +109,7 @@ describe("branch create/delete handlers", () => {
     expect(mockSendMessage).not.toHaveBeenCalled();
   });
 
-  it("posts a notification when a branch is deleted", async () => {
+  it("does not post a branch deletion to the group", async () => {
     await receive("delete", {
       ref: "feature/foo",
       ref_type: "branch",
@@ -123,11 +118,7 @@ describe("branch create/delete handlers", () => {
       sender: { login: "alice" },
     });
 
-    expect(mockSendMessage).toHaveBeenCalledTimes(1);
-    const [chatId, text] = mockSendMessage.mock.calls[0];
-    expect(chatId).toBe("-1000000");
-    expect(text).toContain("Branch deleted");
-    expect(text).toContain("feature/foo");
+    expect(mockSendMessage).not.toHaveBeenCalled();
   });
 
   it("ignores tag deletion", async () => {
